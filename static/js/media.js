@@ -74,48 +74,82 @@ export function pickAudioMime() {
 
 export async function startRecording(onLevel) {
   if (!navigator.mediaDevices?.getUserMedia || !window.MediaRecorder) throw new Error('Sprachaufnahme wird von diesem Browser nicht unterstützt');
-  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true } });
+  if (!window.isSecureContext) throw new Error('Mikrofon nur über HTTPS verfügbar');
+  const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
   const mime = pickAudioMime();
-  const rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+  let rec;
+  try {
+    rec = new MediaRecorder(stream, mime ? { mimeType: mime, audioBitsPerSecond: 32000 } : undefined);
+  } catch {
+    rec = new MediaRecorder(stream); // Fallback: Standardformat des Browsers
+  }
   const chunks = [];
-  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const levels = []; // Pegelverlauf für die Wellenform (wird verschlüsselt mitgesendet)
+  rec.ondataavailable = (e) => e.data && e.data.size && chunks.push(e.data);
   const started = performance.now();
 
-  // Pegelanzeige
-  let raf = 0, actx = null;
+  let raf = 0, actx = null, lastSample = 0;
   try {
-    actx = new AudioContext();
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    if (actx.state === 'suspended') await actx.resume().catch(() => {});
     const an = actx.createAnalyser();
-    an.fftSize = 256;
+    an.fftSize = 512;
     actx.createMediaStreamSource(stream).connect(an);
-    const data = new Uint8Array(an.frequencyBinCount);
+    const data = new Uint8Array(an.fftSize);
     const tick = () => {
       an.getByteTimeDomainData(data);
-      let peak = 0;
-      for (const v of data) peak = Math.max(peak, Math.abs(v - 128));
-      onLevel?.(peak / 128, (performance.now() - started) / 1000);
+      let sum = 0;
+      for (const v of data) { const x = (v - 128) / 128; sum += x * x; }
+      const lv = Math.min(1, Math.sqrt(sum / data.length) * 3.2);
+      const now = performance.now();
+      if (now - lastSample > 50) { levels.push(lv); lastSample = now; }
+      onLevel?.(lv, (now - started) / 1000, levels);
       raf = requestAnimationFrame(tick);
     };
     tick();
-  } catch { /* Pegel optional */ }
+  } catch {
+    // Pegelanzeige ist optional – Zeit trotzdem aktualisieren
+    const iv = setInterval(() => onLevel?.(0, (performance.now() - started) / 1000, levels), 200);
+    raf = -iv;
+  }
 
   rec.start(250);
+  let stopped = false;
   const cleanup = () => {
-    cancelAnimationFrame(raf);
+    if (raf > 0) cancelAnimationFrame(raf); else clearInterval(-raf);
     actx?.close().catch(() => {});
     stream.getTracks().forEach((t) => t.stop());
   };
   return {
     stop: () => new Promise((resolve) => {
+      if (stopped) return;
+      stopped = true;
       rec.onstop = () => {
         cleanup();
-        const type = rec.mimeType || mime || 'audio/webm';
-        resolve({ blob: new Blob(chunks, { type }), mime: type, duration: (performance.now() - started) / 1000 });
+        const type = (rec.mimeType || mime || 'audio/webm');
+        resolve({ blob: new Blob(chunks, { type }), mime: type, duration: (performance.now() - started) / 1000, wave: downsample(levels, 48) });
       };
-      rec.stop();
+      if (rec.state === 'inactive') rec.onstop(); else rec.stop();
     }),
-    cancel: () => { rec.onstop = cleanup; try { rec.stop(); } catch { cleanup(); } },
+    cancel: () => {
+      if (stopped) return;
+      stopped = true;
+      rec.onstop = cleanup;
+      try { rec.stop(); } catch { cleanup(); }
+    },
   };
+}
+
+export function downsample(values, n) {
+  if (!values.length) return Array(n).fill(0.1);
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const a = Math.floor((i / n) * values.length), b = Math.max(a + 1, Math.floor(((i + 1) / n) * values.length));
+    let peak = 0;
+    for (let j = a; j < b && j < values.length; j++) peak = Math.max(peak, values[j]);
+    out.push(Math.round(Math.max(0.06, peak) * 100) / 100);
+  }
+  return out;
 }
 
 export function canPlayAudio(mime) {

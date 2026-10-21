@@ -12,6 +12,8 @@ export const S = {
   messages: new Map(), // Kontakt-ID -> Nachrichten (aufsteigend)
   hasMore: new Map(),
   decoded: new Map(),  // Nachrichten-ID -> Promise<{payload}|{error}>
+  dec: new Map(),      // Nachrichten-ID -> {payload}|{error} (bereits entschlüsselt, synchron lesbar)
+  view: 'chats',       // aktiver Navigationspunkt
   typing: new Map(),   // Kontakt-ID -> { until, preview }
   uploads: new Map(),  // Kontakt-ID -> [{ id, label, progress }]
   blobs: new Map(),    // Datei-ID -> { blob, url }

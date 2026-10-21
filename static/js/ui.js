@@ -121,3 +121,35 @@ export function switchRow({ label, desc, checked, onChange }) {
 export function button(label, { kind = 'filled', onClick, type = 'button', icon: ic, cls = '', disabled = false } = {}) {
   return h('button', { class: `btn ${kind} ${cls}`, type, onclick: onClick, disabled }, ic ? icon(ic, 20) : null, h('span', {}, label));
 }
+
+// ---------------------------------------------------------------- Ripple (Material-Welleneffekt)
+const RIPPLE_SEL = '.btn, .icon-btn, .nav-item, .menu-item, .chip, .fab, .tab, .row-inner, .status-row, .segmented button, .reaction-pick';
+export function initRipple() {
+  document.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    const t = e.target.closest(RIPPLE_SEL);
+    if (!t || t.disabled || matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const r = t.getBoundingClientRect();
+    const size = Math.max(r.width, r.height) * 2.2;
+    const s = document.createElement('span');
+    s.className = 'ripple';
+    s.style.width = s.style.height = size + 'px';
+    s.style.left = (e.clientX - r.left - size / 2) + 'px';
+    s.style.top = (e.clientY - r.top - size / 2) + 'px';
+    t.append(s);
+    const kill = () => s.remove();
+    s.addEventListener('animationend', kill);
+    setTimeout(kill, 900);
+  }, { passive: true });
+}
+
+// DOM-Abgleich: bringt die Kinder von `container` in die Reihenfolge `nodes`, ohne
+// unveränderte Elemente neu zu erzeugen (verhindert Flackern und erhält Zustand).
+export function reconcile(container, nodes) {
+  let ref = container.firstChild;
+  for (const n of nodes) {
+    if (n === ref) { ref = ref.nextSibling; continue; }
+    container.insertBefore(n, ref);
+  }
+  while (ref) { const next = ref.nextSibling; ref.remove(); ref = next; }
+}
