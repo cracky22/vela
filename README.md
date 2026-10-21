@@ -39,7 +39,18 @@ Beim ersten Aufruf warnt der Browser vor dem selbstsignierten Zertifikat → „
 3. A fügt B über den Nutzernamen hinzu, B nimmt im Tab „Anfragen" an → Schlüssel werden ausgetauscht.
 4. Schreiben, Fotos/Dateien/Sprachnachrichten senden, Einmalansicht testen, wischen:
    - Chatliste: **links** = archivieren, **rechts** = markieren, **lange drücken** = Menü
-   - Nachricht: **rechts** = reagieren, **links** = antworten, **doppeltippen** = ❤️, **lange drücken** = Menü
+   - Nachricht: **rechts** = reagieren, **links** = antworten, **doppeltippen** = ❤️, **lange drücken** = Menü, am Desktop: **Maus darüber** = Aktionsleiste
+   - Mikrofon: **gedrückt halten** = aufnehmen (loslassen = senden, links wischen = verwerfen, hoch wischen = einrasten) oder **kurz tippen** = Aufnahme starten
+5. Unten (bzw. links am Desktop) wechselst du zwischen **Chats**, **Status** und **Profil** (Profilbild, Info, Einstellungen).
+
+### Transkription einrichten (einmalig)
+
+Die Umwandlung von Sprachnachrichten in Text läuft auf dem Gerät. Laufzeit und Modell liefert dein eigener Vela-Server aus; er lädt sie einmalig herunter (~45 MB für „Whisper Tiny"):
+
+- in der App: **Profil → Sprachnachrichten → Transkription → „Jetzt einrichten"** (oder einfach bei einer Sprachnachricht auf „Transkribieren" tippen), oder
+- im Terminal: `python run.py --setup-transcription` (bzw. `--setup-transcription onnx-community/whisper-base` für das genauere Modell).
+
+Die Dateien landen in `data/vendor/`. Danach kontaktiert weder Server noch Browser für die Transkription einen Drittanbieter.
 
 ## Zertifikat ohne Browser-Warnung (optional)
 
@@ -66,7 +77,9 @@ Für Smartphones muss die mkcert-Root-CA zusätzlich auf dem Gerät installiert 
 | `VELA_WORKER_THREADS` | `64` | Thread-Pool für DB, Hashing, Datei-I/O |
 | `VELA_DATA_DIR` | `./data` | Datenbank, Uploads, Zertifikate |
 
-Alle Daten liegen in `data/`. Zum Zurücksetzen den Server stoppen und den Ordner löschen.
+Alle Daten liegen in `data/`. Zum Zurücksetzen den Server stoppen und den Ordner löschen. Beim Update auf eine neue Version wird die bestehende Datenbank automatisch migriert.
+
+> **Windows:** Meldungen wie `ConnectionResetError: [WinError 10054]` stammen von abgebrochenen Browser-Verbindungen und sind harmlos. Ab Version 1.1 werden sie unterdrückt.
 
 ## Projektstruktur
 
@@ -80,12 +93,15 @@ vela/
 │   ├── security.py        scrypt, TOTP (RFC 6238), Tokens, Rate-Limiting
 │   ├── db.py              SQLite (WAL, eine Verbindung pro Thread)
 │   ├── ws.py              Echtzeit-Verbindungen
+│   ├── models_dl.py       Einmaliger Download der Transkriptions-Modelle
 │   └── config.py          Einstellungen
 ├── static/
 │   ├── index.html, css/app.css (Material Design 3)
 │   └── js/
 │       ├── crypto.js      E2E: RSA-OAEP, ECDSA, AES-256-GCM, HKDF, Sicherheitsnummern
-│       ├── app.js         Chatliste, Chat, Medien, Echtzeit, Einstellungen
+│       ├── app.js         Navigation, Chatliste, Chat, Medien, Echtzeit
+│       ├── status.js      Status-Beiträge (24 h, E2E)
+│       ├── profile.js     Profil, Profilbild, Einstellungen
 │       ├── auth.js        Registrierung, 2FA, Wiederherstellung, Schlüsselrotation
 │       ├── gestures.js    Wischen, Long-Press, Doppeltippen
 │       ├── media.js       Bildkompression, Sprachaufnahme
@@ -102,7 +118,7 @@ python run.py            # in einem zweiten Terminal
 python tests/e2e_test.py
 ```
 
-Der Test registriert zwei Nutzer (Desktop + Pixel 7), tauscht Schlüssel aus, prüft Text, Tipp-Indikator, Lesebestätigung, Bildkompression, Datei, Einmalansicht (inkl. Löschung auf dem Server), Reaktion, Wischen zum Archivieren, identische Sicherheitsnummern, dass der Server **nur Ciphertext** speichert, und die Schlüsselwiederherstellung auf einem neuen Gerät (iPhone 13). Er verwendet eine frische Datenbank am besten mit gelöschtem `data/`-Ordner.
+Der Test registriert zwei Nutzer (Desktop + Pixel 7), tauscht Schlüssel aus, prüft Text, Sprachnachrichten (Tippen und Gedrückthalten, simuliertes Mikrofon), Status, Profilbild, Tipp-Indikator, Lesebestätigung, Bildkompression, Datei, Einmalansicht (inkl. Löschung auf dem Server), Reaktion, Wischen zum Archivieren, identische Sicherheitsnummern, dass der Server **nur Ciphertext** speichert, und die Schlüsselwiederherstellung auf einem neuen Gerät (iPhone 13). Er verwendet eine frische Datenbank am besten mit gelöschtem `data/`-Ordner.
 
 ## Wichtig zu wissen
 

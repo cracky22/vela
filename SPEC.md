@@ -1,6 +1,8 @@
 # Vela – Feature-Spezifikation
 
-**Ende-zu-Ende-verschlüsselte Messaging-Plattform · Version 1.0 · Stand: Oktober 2026**
+**Ende-zu-Ende-verschlüsselte Messaging-Plattform · Version 1.1 · Stand: Oktober 2026**
+
+> **Neu in 1.1:** Navigation (Chats · Status · Profil), Profilbild & Info, Status-Beiträge (E2E, 24 h), Sprachnachrichten mit Gedrückthalten + Wellenform, selbst gehostete Transkription, flackerfreie Darstellung, überarbeitetes Design.
 
 Diese Spezifikation beschreibt jedes Feature im Format *Beschreibung → Technische Implementierung → User Journey → Sicherheitsaspekte → Performance → Akzeptanzkriterien*. Zu jedem Feature ist vermerkt, wie es in der beiliegenden **Referenzimplementierung** (Python/FastAPI + Web-Frontend, ohne Docker startbar) umgesetzt ist und was für den **Produktivbetrieb** zusätzlich nötig ist.
 
@@ -234,11 +236,13 @@ Diese Spezifikation beschreibt jedes Feature im Format *Beschreibung → Technis
 
 **Technische Implementierung**:
 - Aufnahme: `MediaRecorder` (Chrome/Android: WebM/Opus, Safari/iOS: MP4/AAC), 32 kbit/s, Echo- und Rauschunterdrückung, Pegelanzeige, max. 5 min.
-- Transkription: **Whisper** über **Transformers.js 4.3.1** (ONNX Runtime Web/WASM) in einem **Web Worker**: Audio → `decodeAudioData` → Mono 16 kHz → Whisper (`onnx-community/whisper-tiny` ≈ 40 MB oder `whisper-base` ≈ 80 MB, Sprache Deutsch/Englisch/automatisch).
+- Transkription: **Whisper** über **Transformers.js 4.3.1** (ONNX Runtime Web/WASM) in einem **Web Worker**: Audio → `decodeAudioData` → Mono 16 kHz → Whisper (`onnx-community/whisper-tiny` ≈ 40 MB oder `whisper-base` ≈ 80 MB, quantisiert, Sprache Deutsch/Englisch/automatisch).
+- **Selbst gehostet (ab 1.1)**: Laufzeit und Modell werden **einmalig vom eigenen Vela-Server** heruntergeladen (in der App unter Profil → Sprachnachrichten oder per `python run.py --setup-transcription`) und unter `/vendor/` ausgeliefert. Browser kontaktieren danach keine Drittanbieter mehr; die CSP erlaubt keine fremden Skript-Hosts. Hintergrund: Version 1.0 lud die Laufzeit direkt vom CDN, und Transformers.js lädt intern ein WASM-Modul über eine `blob:`-URL, die die CSP blockierte – daher „Modell konnte nicht geladen werden".
 - Bewusst **nicht** verwendet: die Web Speech API – in Chrome wird Audio dafür an Server des Browserherstellers gesendet, das widerspräche E2E und DSGVO.
-- Das Modell (öffentliche Gewichte) wird einmalig von Hugging Face/jsDelivr geladen und im Browser-Cache gespeichert; dabei sehen diese Anbieter die IP-Adresse. Daher **Opt-in** mit Erklärung. *Produktion*: Modell selbst hosten.
 
-**User Journey**: Mikrofon-Taste (wenn das Feld leer ist) → Aufnahmeleiste mit rotem Punkt, Zeit, Pegel, „Verwerfen" und „Senden". Empfänger: Play/Pause mit Fortschrittsbalken; bei aktivierter Transkription Symbol „Transkribieren" → einmaliger Modell-Download mit Prozentanzeige → „Wird auf deinem Gerät transkribiert …" → Text unter der Nachricht.
+**Aufnahme-Bedienung (ab 1.1)**: Mikrofon-Taste **gedrückt halten** → aufnehmen, loslassen → senden; dabei **nach links wischen** → verwerfen, **nach oben wischen** → einrasten. **Kurz tippen** startet eine eingerastete Aufnahme (Senden/Verwerfen per Taste). Live-Wellenform während der Aufnahme; ein Pegelverlauf (48 Werte) wird verschlüsselt mitgesendet und beim Empfänger als Wellenform mit Fortschritt, Sprungmarken und Geschwindigkeit (1×/1,5×/2×) angezeigt.
+
+**User Journey**: Mikrofon-Taste (wenn das Feld leer ist) → Aufnahmeleiste mit rotem Punkt, Zeit und Live-Wellenform. Empfänger: Play/Pause, Wellenform, Geschwindigkeit; Symbol „Transkribieren" → beim ersten Mal Bestätigung + Einrichtung auf dem Server mit Prozentanzeige → „Wird auf deinem Gerät transkribiert …" → Text unter der Nachricht. Fehler werden mit Ursache und „Erneut versuchen" angezeigt.
 
 **Sicherheitsaspekte**: Audio verlässt das Gerät nur verschlüsselt. Mikrofonzugriff nur nach Browser-Berechtigung (`Permissions-Policy: microphone=(self)`).
 
@@ -247,7 +251,10 @@ Diese Spezifikation beschreibt jedes Feature im Format *Beschreibung → Technis
 **Plattform-Hinweis**: Ob ein Browser das Audioformat des anderen abspielen kann, hängt von der Browserversion ab. Die App prüft `canPlayType` und weist darauf hin; die Transkription funktioniert unabhängig davon, sofern der Browser das Format dekodieren kann. *Produktion*: einheitliches Aufnahmeformat in den nativen Apps (z. B. Opus in Ogg auf beiden Plattformen).
 
 **Akzeptanzkriterien**:
-- [x] Aufnahme, Versand, Wiedergabe mit Fortschritt; Transkription ohne Server-Beteiligung.
+- [x] Aufnahme (Tippen und Gedrückthalten), Versand und Wiedergabe beim Empfänger (automatisierter Test mit simuliertem Mikrofon).
+- [x] Fehler aus 1.0 behoben: Die verschlüsselte Audiodatei wurde nicht an die Nachricht gebunden (Empfänger erhielt 404).
+- [x] Modell-Download inkl. Manifest gegen nachgebautes CDN getestet; Audio verlässt das Gerät nicht.
+- [ ] Transkription mit echtem Modell auf Zielgeräten abnehmen (im Testsystem ohne Internetzugang nicht möglich).
 - [ ] Manuelle Abnahme auf echten iOS- und Android-Geräten (Mikrofon lässt sich nicht automatisiert testen).
 
 ---
@@ -314,9 +321,15 @@ Reaktionen (👍 ❤️ 😂 😮 😢 🙏) und Antworten sind E2E-verschlüsse
 - [x] Vertikales Scrollen wird nie versehentlich als Wischgeste erkannt.
 - [x] Jede Gesten-Aktion ist zusätzlich über ein Menü erreichbar (Barrierefreiheit).
 
+### C1b · Navigation
+
+Drei Ziele: **Chats** (Badge: ungelesene Chats + Anfragen), **Status** (Punkt bei ungesehenen Beiträgen), **Profil** (eigenes Profilbild als Symbol). Kompakt: M3-**Navigation-Bar** unten mit animierter Aktiv-Pille; erweitert (≥ 840 px): **Navigation-Rail** links mit FAB „Neuer Chat". Wechsel mit *Fade-Through*-Übergang. Die Einstellungen sind Teil von „Profil".
+
 ### C2 · Material Design 3
 
 **Technische Implementierung**: Eigene, abhängigkeitsfreie Umsetzung der M3-Tokens: vollständige Farbrollen (Primary/Secondary/Tertiary/Surface-Container-Stufen) für Hell und Dunkel, automatisch nach Systemeinstellung oder manuell; Formskala (4–28 px), Elevation, Bewegungskurven (*standard*/*emphasized*), State-Layer (8 %/12 %). Komponenten: Top-App-Bar, FAB, Filter-Chips, Listen, Outlined-Text-Fields mit schwebendem Label, Filled/Tonal/Text-Buttons, Dialoge, Bottom-Sheets, Menüs, Snackbar, Switches, Segmented Buttons, Stepper. Icons als Inline-SVG (Material Symbols) – **keine externen Schriften**, damit keine Anfragen an Drittserver entstehen. `prefers-reduced-motion` wird respektiert.
+
+**Darstellung & Animation (1.1)**: Nachrichten werden per **schlüsselbasiertem DOM-Abgleich** aktualisiert – nur neue oder geänderte Nachrichten werden erzeugt, alles andere bleibt unangetastet (behebt das Flackern bei jeder Aktualisierung und wenn das Gegenüber tippt; laufende Wiedergaben bleiben erhalten). Größere Bubbles (16,5 px, Radius 22 px) mit Gruppierung aufeinanderfolgender Nachrichten, Einflug-Animation nur für neue Nachrichten, Material-Ripple, Feder-Animationen für Reaktionen, Häkchen und Badges, Skeleton-Ladezustand, „Nach unten"-Taste mit Zähler, haftende Datumstrenner. Die **Tipp-Anzeige** sitzt in einem eigenen Bereich **direkt über der Eingabeleiste** (klappt animiert auf). Auf dem Desktop erscheint beim Überfahren einer Nachricht eine **Aktionsleiste über der Nachricht** (❤️ 👍 😂, weitere Reaktionen, Antworten, Kopieren, Mehr).
 
 ### C3 · Animierte Fortschrittsanzeigen
 
@@ -339,6 +352,7 @@ M3-Fensterklassen: **kompakt (< 840 px)** – eine Ansicht, Chat schiebt sich ü
 
 **Technische Implementierung** (Referenz):
 - **Asynchroner Event-Loop** (uvicorn/asyncio) für I/O-gebundene Arbeit: WebSockets, Datei-Streaming, Echtzeit-Weiterleitung.
+- Unter **Windows** meldet die Proactor-Event-Loop abgebrochene Verbindungen (z. B. geschlossene Tabs, Zertifikatswarnungen) als `ConnectionResetError [WinError 10054]`. Das ist harmlos; ein eigener Exception-Handler unterdrückt diese Meldungen seit 1.1. Außerdem werden MIME-Typen (`.js`, `.mjs`, `.wasm`) fest gesetzt, da die Windows-Registry sie teils falsch liefert.
 - **Thread-Pool** (Standard 64 Threads, `VELA_WORKER_THREADS`) für blockierende Arbeit: Alle REST-Endpunkte sind synchrone Funktionen und laufen parallel im Pool; Passwort-Hashing (scrypt gibt den GIL frei), Datenbankzugriffe (eine SQLite-Verbindung pro Thread, WAL-Modus für parallele Leser), Datei-I/O.
 - Benachrichtigungen aus Worker-Threads werden thread-sicher an den Event-Loop übergeben, ohne auf langsame Clients zu warten (`app/ws.py`).
 - Die **Verschlüsselung** selbst läuft auf den Clients – der Server hat keine Krypto-Last pro Nachricht.
@@ -363,9 +377,9 @@ Grobe Dimensionierung: 1 Mio. gleichzeitige Verbindungen ≈ 10–20 Gateway-Kno
 
 ### D3 · Datensicherheit & Datenminimierung
 
-**Gespeichert**: Nutzername, E-Mail, Passwort-Hash, TOTP-Secret, öffentliche Schlüssel, verschlüsseltes Schlüssel-Backup, Hash des Wiederherstellungs-Auth-Werts, Kontaktbeziehungen, verschlüsselte Nachrichten und Dateien (mit Ablaufdatum), Sitzungen (nur als Hash).
+**Gespeichert**: Nutzername, E-Mail, Passwort-Hash, TOTP-Secret, öffentliche Schlüssel, verschlüsseltes Schlüssel-Backup, Hash des Wiederherstellungs-Auth-Werts, Kontaktbeziehungen, Profilbild und Info (nur für Kontakte sichtbar), verschlüsselte Nachrichten, Status-Beiträge und Dateien (mit Ablaufdatum), Status-Aufrufe, Sitzungen (nur als Hash).
 **Nicht gespeichert**: Klartext, private Schlüssel, Dateinamen, IP-Adressen (Access-Log ist deaktiviert), Geräteinformationen.
-**Speicherbegrenzung**: Ciphertext wird nach **30 Tagen** (`VELA_RETENTION_DAYS`) gelöscht, Einmalansichten sofort nach dem Öffnen, nicht verknüpfte Uploads nach 24 h, abgelaufene Sitzungen und unbestätigte Konten automatisch (Aufräum-Job alle 5 min).
+**Speicherbegrenzung**: Status nach **24 Stunden**, Ciphertext nach **30 Tagen** (`VELA_RETENTION_DAYS`) gelöscht, Einmalansichten sofort nach dem Öffnen, nicht verknüpfte Uploads nach 24 h, abgelaufene Sitzungen und unbestätigte Konten automatisch (Aufräum-Job alle 5 min).
 
 ---
 
@@ -397,6 +411,26 @@ Grobe Dimensionierung: 1 Mio. gleichzeitige Verbindungen ≈ 10–20 Gateway-Kno
 Für den Produktivbetrieb zusätzlich: Verarbeitungsverzeichnis, Datenschutzerklärung, AV-Verträge mit Hostern, Datenschutz-Folgenabschätzung (Art. 35 – bei einem Messenger mit großer Nutzerzahl erforderlich).
 
 ---
+
+### E5 · Profil: Profilbild & Info
+
+**Beschreibung**: Ein Profilbild und eine kurze Info (max. 140 Zeichen), sichtbar für angenommene Kontakte.
+
+**Technische Implementierung**: Der Client schneidet das Bild quadratisch zu, skaliert auf 512 px und kodiert es als JPEG neu (entfernt EXIF/GPS). Server: nur JPEG (Magic-Bytes-Prüfung), max. 2 MB, Auslieferung nur an mich und angenommene Kontakte (`GET /api/avatars/{id}`, versionierte URL, privater Cache). **Ehrliche Einordnung**: Profilbild und Info sind **nicht** Ende-zu-Ende-verschlüsselt (wie bei WhatsApp) – das wird in der App angezeigt. *Produktion*: Verschlüsselung mit einem Profilschlüssel, der per E2E-Nachricht an Kontakte verteilt wird (Signal-Modell).
+
+**Akzeptanzkriterien**: [x] Upload, Anzeige bei Kontakten (automatisierter Test), Entfernen, Löschung mit dem Konto.
+
+### E6 · Status (24-Stunden-Beiträge)
+
+**Beschreibung**: Text- (farbiger Hintergrund) oder Foto-Beiträge, die alle Kontakte 24 Stunden lang sehen können.
+
+**Technische Implementierung**: Ein Beitrag ist ein Umschlag wie eine Nachricht: AES-256-GCM-Inhalt, Schlüssel per RSA-OAEP für **jeden angenommenen Kontakt mit bestätigtem Schlüssel** und für mich gekapselt, ECDSA-signiert (AAD bindet ID und Autor). Fotos werden komprimiert, blockweise verschlüsselt und laufen mit dem Beitrag ab. Der Server prüft, dass nur eigene Kontakte als Empfänger enthalten sind, und löscht Beitrag und Datei nach 24 h. Aufrufe werden gezählt; namentlich sieht der Autor nur Personen mit aktivierten Lesebestätigungen. Antworten auf einen Status sind normale E2E-Nachrichten mit Zitat.
+
+**User Journey**: Navigationspunkt Status → „Mein Status" (Ring mit Segmenten pro Beitrag) / Text- und Kamera-FAB → Vollbild-Editor (Farbe wechseln, Schriftgröße passt sich an) → Teilen. Kontakte sehen „Neue Updates" mit farbigem Ring; Betrachter mit animierten Fortschrittssegmenten, Tippen links/rechts = zurück/weiter, Gedrückthalten = Pause, nach unten wischen = schließen, Antwortfeld.
+
+**Sicherheitsaspekte**: Kontakte, die nach dem Posten hinzukommen, können ältere Beiträge nicht entschlüsseln (bewusst). Metadaten (wer wann postet, Anzahl Aufrufe) sind für den Server sichtbar.
+
+**Akzeptanzkriterien**: [x] Beitrag teilen, beim Kontakt anzeigen, beantworten (automatisierter Test); [x] serverseitige Löschung nach 24 h.
 
 # F) Cross-Platform-Konsistenz
 

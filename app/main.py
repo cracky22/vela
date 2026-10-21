@@ -12,6 +12,7 @@ import binascii
 import hmac
 import json
 import logging
+import mimetypes
 import re
 import sqlite3
 import time
@@ -31,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from starlette.datastructures import MutableHeaders
 
-from . import config, db, security
+from . import config, db, models_dl, security
 from .security import limiter
 from .ws import manager
 
@@ -43,6 +44,15 @@ HEX32 = re.compile(r"^[a-f0-9]{32}$")
 USERNAME_RE = re.compile(r"^[A-Za-z0-9_.]{3,32}$")
 EMAIL_RE = re.compile(r"^[^@\s]{1,64}@[^@\s]{1,189}\.[^@\s]{2,63}$")
 DEFAULT_SETTINGS = {"read_receipts": True, "typing_indicator": True, "live_typing": False}
+STATUS_TTL_MS = DAY_MS  # Status-Beiträge verschwinden nach 24 Stunden
+AVATAR_MAX_BYTES = 2 * 1024 * 1024
+
+# Windows liest MIME-Typen aus der Registry; dort ist .js teils als text/plain eingetragen,
+# was Module-Skripte (mit nosniff) blockiert. Daher feste Zuordnung.
+for _ext, _type in ((".js", "text/javascript"), (".mjs", "text/javascript"), (".wasm", "application/wasm"),
+                    (".css", "text/css"), (".svg", "image/svg+xml"), (".webmanifest", "application/manifest+json"),
+                    (".json", "application/json"), (".onnx", "application/octet-stream")):
+    mimetypes.add_type(_type, _ext)
 
 
 # =============================================================== Lebenszyklus
@@ -52,8 +62,11 @@ def cleanup() -> dict[str, int]:
     stats = {}
     with db.tx() as c:
         doomed = [r["id"] for r in c.execute(
-            "SELECT id FROM files WHERE expires_at < ? OR (message_id IS NULL AND created_at < ?)",
+            "SELECT id FROM files WHERE expires_at < ? OR (message_id IS NULL AND status_id IS NULL AND created_at < ?)",
             (now, now - DAY_MS))]
+        doomed += [r["id"] for r in c.execute(
+            "SELECT f.id FROM files f JOIN statuses s ON s.id=f.status_id WHERE s.expires_at < ?", (now,))]
+        stats["statuses"] = c.execute("DELETE FROM statuses WHERE expires_at < ?", (now,)).rowcount
         doomed += [r["id"] for r in c.execute(
             "SELECT f.id FROM files f JOIN messages m ON m.id=f.message_id WHERE m.expires_at < ?", (now,))]
         c.executemany("DELETE FROM files WHERE id=?", [(i,) for i in doomed])
@@ -65,6 +78,7 @@ def cleanup() -> dict[str, int]:
         for uid in pending:
             doomed += [r["id"] for r in c.execute("SELECT id FROM files WHERE owner_id=?", (uid,))]
             c.execute("DELETE FROM users WHERE id=?", (uid,))
+            (config.DATA_DIR / "avatars" / f"{uid}.jpg").unlink(missing_ok=True)
         stats["pending_accounts"] = len(pending)
     for fid in doomed:
         _unlink(fid)
@@ -81,8 +95,18 @@ async def _cleanup_loop() -> None:
         await asyncio.sleep(300)
 
 
+def _quiet_disconnects(loop: asyncio.AbstractEventLoop, context: dict) -> None:
+    """Unter Windows meldet die Proactor-Event-Loop abgebrochene Client-Verbindungen
+    (WinError 10054, z. B. geschlossener Tab oder Zertifikatswarnung) als Fehler. Das ist
+    harmlos und wird hier unterdrückt; alle anderen Fehler laufen normal weiter."""
+    if isinstance(context.get("exception"), (ConnectionResetError, ConnectionAbortedError, BrokenPipeError)):
+        return
+    loop.default_exception_handler(context)
+
+
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    asyncio.get_running_loop().set_exception_handler(_quiet_disconnects)
     db.init()
     # Thread-Pool für blockierende Arbeit (sync-Endpunkte, DB, Hashing, Datei-I/O)
     anyio.to_thread.current_default_thread_limiter().total_tokens = config.WORKER_THREADS
@@ -117,15 +141,16 @@ class SecurityMiddleware:
             if headers.get("x-requested-with") != "vela" or (origin and urlparse(origin).netloc != host):
                 return await JSONResponse({"detail": "Anfrage abgelehnt (CSRF-Schutz)"}, 403)(scope, receive, send)
             cl = headers.get("content-length")
-            if path != "/api/files" and cl and cl.isdigit() and int(cl) > config.MAX_JSON_BYTES:
+            if path not in ("/api/files", "/api/me/avatar") and cl and cl.isdigit() and int(cl) > config.MAX_JSON_BYTES:
                 return await JSONResponse({"detail": "Anfrage zu groß"}, 413)(scope, receive, send)
 
         csp = (
             "default-src 'self'; "
-            "script-src 'self' https://cdn.jsdelivr.net 'wasm-unsafe-eval'; "
+            # blob: + wasm-unsafe-eval: die ONNX-Runtime (Transkription) lädt ihr WASM-Modul so.
+            # Fremde Skript-Hosts sind nicht erlaubt – alle Dateien kommen vom eigenen Server.
+            "script-src 'self' blob: 'wasm-unsafe-eval'; "
             "worker-src 'self' blob:; "
-            f"connect-src 'self' wss://{host} ws://{host} https://cdn.jsdelivr.net "
-            "https://huggingface.co https://*.huggingface.co https://*.hf.co; "
+            f"connect-src 'self' blob: wss://{host} ws://{host}; "
             "img-src 'self' blob: data:; media-src 'self' blob:; "
             "style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; "
             "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
@@ -143,7 +168,9 @@ class SecurityMiddleware:
                 h["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)"
                 if config.TLS_ENABLED:
                     h["Strict-Transport-Security"] = "max-age=31536000"
-                if path.startswith("/api/"):
+                if path.startswith("/api/avatars/"):
+                    h["Cache-Control"] = "private, max-age=86400"
+                elif path.startswith("/api/"):
                     h["Cache-Control"] = "no-store"
                 elif "cache-control" not in h:
                     h["Cache-Control"] = "no-cache"
@@ -489,7 +516,7 @@ def me(sess: Session):
         "id": u["id"], "username": u["username"], "email": u["email"], "full": sess["full"],
         "totp_enabled": bool(u["totp_enabled"]), "key_bits": u["key_bits"], "key_version": u["key_version"],
         "enc_pub": u["enc_pub"], "sig_pub": u["sig_pub"], "settings": user_settings(u["id"]),
-        "created_at": u["created_at"],
+        "created_at": u["created_at"], "about": u["about"], "avatar_version": u["avatar_version"],
     }
 
 
@@ -569,6 +596,7 @@ def delete_account(body: DeleteAccountIn, sess: Full, response: Response):
         c.execute("DELETE FROM users WHERE id=?", (uid,))
     for fid in files:
         _unlink(fid)
+    (config.DATA_DIR / "avatars" / f"{uid}.jpg").unlink(missing_ok=True)
     for cid in contacts:
         manager.notify(cid, {"type": "contact_update"})
     manager.close_user_from_thread(uid)
@@ -584,15 +612,15 @@ def list_contacts(sess: Full):
         "SELECT sender_id, COUNT(*) n FROM messages WHERE recipient_id=? AND read_at IS NULL "
         "AND silent=0 AND deleted_at IS NULL GROUP BY sender_id", me_)}
     out = []
-    for r in db.all_("SELECT c.*, u.username, u.enc_pub, u.sig_pub, u.key_bits, u.key_version "
-                     "FROM contacts c JOIN users u ON u.id=c.contact_id WHERE c.user_id=?", me_):
+    for r in db.all_("SELECT c.*, u.username, u.enc_pub, u.sig_pub, u.key_bits, u.key_version, u.about, "
+                     "u.avatar_version FROM contacts c JOIN users u ON u.id=c.contact_id WHERE c.user_id=?", me_):
         item = {"id": r["contact_id"], "username": r["username"], "status": r["status"],
                 "archived": bool(r["archived"]), "pinned": bool(r["pinned"]), "muted": bool(r["muted"]),
                 "since": r["created_at"], "unread": unread.get(r["contact_id"], 0), "last": None}
         if r["status"] == "accepted":
             # Öffentliche Schlüssel werden erst nach beidseitiger Zustimmung herausgegeben
             item.update(enc_pub=r["enc_pub"], sig_pub=r["sig_pub"], key_bits=r["key_bits"],
-                        key_version=r["key_version"])
+                        key_version=r["key_version"], about=r["about"], avatar_version=r["avatar_version"])
             last = db.one("SELECT * FROM messages WHERE ((sender_id=? AND recipient_id=?) OR "
                           "(sender_id=? AND recipient_id=?)) AND silent=0 ORDER BY created_at DESC LIMIT 1",
                           me_, r["contact_id"], r["contact_id"], me_)
@@ -810,15 +838,211 @@ async def upload_file(request: Request, sess: Full):
 def download_file(fid: str, sess: Full):
     if not HEX32.match(fid):
         raise HTTPException(404, "Datei nicht gefunden")
-    row = db.one("SELECT f.owner_id, m.recipient_id, m.deleted_at, m.viewed_at FROM files f "
-                 "LEFT JOIN messages m ON m.id=f.message_id WHERE f.id=?", fid)
+    row = db.one("SELECT f.owner_id, f.status_id, m.recipient_id, m.deleted_at, m.viewed_at, s.expires_at AS s_exp "
+                 "FROM files f LEFT JOIN messages m ON m.id=f.message_id LEFT JOIN statuses s ON s.id=f.status_id "
+                 "WHERE f.id=?", fid)
     me_ = sess["user_id"]
-    if not row or me_ not in (row["owner_id"], row["recipient_id"]) or row["deleted_at"] or row["viewed_at"]:
-        raise HTTPException(404, "Datei nicht gefunden")
+    allowed = False
+    if row:
+        if me_ == row["owner_id"]:
+            allowed = True
+        elif row["recipient_id"] == me_ and not row["deleted_at"] and not row["viewed_at"]:
+            allowed = True
+        elif row["status_id"] and (row["s_exp"] or 0) > db.now_ms() and \
+                contact_status(me_, row["owner_id"]) == "accepted":
+            allowed = True
     path = config.UPLOAD_DIR / fid
-    if not path.exists():
+    if not allowed or not path.exists():
         raise HTTPException(404, "Datei nicht gefunden")
     return FileResponse(path, media_type="application/octet-stream", headers={"Cache-Control": "no-store"})
+
+
+# =============================================================== Profil & Profilbild
+class ProfileIn(BaseModel):
+    about: str = Field(default="", max_length=140)
+
+
+@app.put("/api/me/profile")
+def update_profile(body: ProfileIn, sess: Full):
+    about = " ".join(body.about.split())  # Steuerzeichen/Zeilenumbrüche entfernen
+    with db.tx() as c:
+        c.execute("UPDATE users SET about=? WHERE id=?", (about, sess["user_id"]))
+    for r in db.all_("SELECT contact_id FROM contacts WHERE user_id=? AND status='accepted'", sess["user_id"]):
+        manager.notify(r["contact_id"], {"type": "contact_update"})
+    return {"about": about}
+
+
+def _bump_avatar(uid: str, delete: bool) -> int:
+    with db.tx() as c:
+        c.execute("UPDATE users SET avatar_version=? WHERE id=?",
+                  (0 if delete else db.now_ms(), uid))
+    v = db.one("SELECT avatar_version FROM users WHERE id=?", uid)["avatar_version"]
+    for r in db.all_("SELECT contact_id FROM contacts WHERE user_id=? AND status='accepted'", uid):
+        manager.notify(r["contact_id"], {"type": "contact_update"})
+    return v
+
+
+@app.post("/api/me/avatar")
+async def upload_avatar(request: Request, sess: Full):
+    """Profilbild (vom Client auf 512 px verkleinert, als JPEG ohne Metadaten neu kodiert).
+    Hinweis: Profilbilder sind NICHT Ende-zu-Ende-verschlüsselt, sondern werden nur an
+    angenommene Kontakte ausgeliefert (siehe SPEC.md, E5)."""
+    rate(f"avatar:{sess['user_id']}", 20, 3600)
+    body = b""
+    async for chunk in request.stream():
+        body += chunk
+        if len(body) > AVATAR_MAX_BYTES:
+            raise HTTPException(413, "Profilbild zu groß (max. 2 MB)")
+    if not body.startswith(b"\xff\xd8\xff"):
+        raise HTTPException(400, "Nur JPEG-Bilder werden akzeptiert")
+    path = config.DATA_DIR / "avatars" / f"{sess['user_id']}.jpg"
+    await anyio.Path(path).write_bytes(body)
+    v = await anyio.to_thread.run_sync(_bump_avatar, sess["user_id"], False)
+    return {"avatar_version": v}
+
+
+@app.delete("/api/me/avatar")
+def delete_avatar(sess: Full):
+    (config.DATA_DIR / "avatars" / f"{sess['user_id']}.jpg").unlink(missing_ok=True)
+    return {"avatar_version": _bump_avatar(sess["user_id"], True)}
+
+
+@app.get("/api/avatars/{uid}")
+def get_avatar(uid: str, sess: Full):
+    if not HEX32.match(uid) or (uid != sess["user_id"] and contact_status(sess["user_id"], uid) != "accepted"):
+        raise HTTPException(404, "Nicht gefunden")
+    path = config.DATA_DIR / "avatars" / f"{uid}.jpg"
+    if not path.exists():
+        raise HTTPException(404, "Nicht gefunden")
+    return FileResponse(path, media_type="image/jpeg")
+
+
+# =============================================================== Status (24-h-Beiträge, E2E)
+class StatusIn(BaseModel):
+    id: str = Field(pattern=r"^[a-f0-9]{32}$")
+    envelope: str = Field(max_length=500_000)
+    files: list[str] = Field(default_factory=list, max_length=1)
+
+
+def accepted_ids(uid: str) -> set[str]:
+    return {r["contact_id"] for r in db.all_(
+        "SELECT contact_id FROM contacts WHERE user_id=? AND status='accepted'", uid)}
+
+
+@app.get("/api/status")
+def list_status(sess: Full):
+    me_ = sess["user_id"]
+    authors = accepted_ids(me_) | {me_}
+    marks = ",".join("?" * len(authors))
+    rows = db.all_(f"SELECT s.*, (SELECT COUNT(*) FROM status_views v WHERE v.status_id=s.id) AS views, "
+                   f"EXISTS(SELECT 1 FROM status_views v WHERE v.status_id=s.id AND v.viewer_id=?) AS seen "
+                   f"FROM statuses s WHERE s.user_id IN ({marks}) AND s.expires_at > ? ORDER BY s.created_at",
+                   me_, *authors, db.now_ms())
+    out = []
+    for r in rows:
+        try:
+            if me_ not in json.loads(r["envelope"]).get("k", {}):
+                continue  # vor der Kontaktaufnahme veröffentlicht -> nicht für mich verschlüsselt
+        except ValueError:
+            continue
+        out.append({"id": r["id"], "user_id": r["user_id"], "envelope": r["envelope"], "ts": r["created_at"],
+                    "expires_at": r["expires_at"], "seen": bool(r["seen"]),
+                    "views": r["views"] if r["user_id"] == me_ else None})
+    return out
+
+
+@app.post("/api/status")
+def post_status(body: StatusIn, sess: Full):
+    me_ = sess["user_id"]
+    rate(f"status:{me_}", 30, 3600)
+    contacts = accepted_ids(me_)
+    try:
+        env = json.loads(body.envelope)
+        assert isinstance(env, dict) and isinstance(env.get("k"), dict) and me_ in env["k"]
+        assert set(env["k"]) <= contacts | {me_}
+    except (ValueError, AssertionError):
+        raise HTTPException(400, "Ungültiger Status-Umschlag")
+    now = db.now_ms()
+    try:
+        with db.tx() as c:
+            c.execute("INSERT INTO statuses (id, user_id, envelope, created_at, expires_at) VALUES (?,?,?,?,?)",
+                      (body.id, me_, body.envelope, now, now + STATUS_TTL_MS))
+            for fid in body.files:
+                if c.execute("UPDATE files SET status_id=?, expires_at=? WHERE id=? AND owner_id=? AND "
+                             "message_id IS NULL AND status_id IS NULL",
+                             (body.id, now + STATUS_TTL_MS, fid, me_)).rowcount != 1:
+                    raise HTTPException(400, "Datei nicht gefunden oder bereits verwendet")
+    except sqlite3.IntegrityError:
+        raise HTTPException(409, "Status-ID bereits vergeben")
+    for cid in contacts | {me_}:
+        manager.notify(cid, {"type": "status_update"})
+    return {"id": body.id, "ts": now, "expires_at": now + STATUS_TTL_MS}
+
+
+@app.post("/api/status/{sid}/view")
+def view_status(sid: str, sess: Full):
+    me_ = sess["user_id"]
+    row = db.one("SELECT user_id FROM statuses WHERE id=? AND expires_at > ?", sid, db.now_ms())
+    if not row or row["user_id"] == me_ or contact_status(me_, row["user_id"]) != "accepted":
+        return {"ok": False}
+    with db.tx() as c:
+        n = c.execute("INSERT OR IGNORE INTO status_views (status_id, viewer_id, viewed_at) VALUES (?,?,?)",
+                      (sid, me_, db.now_ms())).rowcount
+    if n and user_settings(me_)["read_receipts"]:
+        manager.notify(row["user_id"], {"type": "status_view", "id": sid})
+    return {"ok": True}
+
+
+@app.get("/api/status/{sid}/views")
+def status_views(sid: str, sess: Full):
+    """Wer hat meinen Status gesehen? Nur Personen mit aktivierten Lesebestätigungen."""
+    row = db.one("SELECT user_id FROM statuses WHERE id=?", sid)
+    if not row or row["user_id"] != sess["user_id"]:
+        raise HTTPException(404, "Nicht gefunden")
+    viewers = []
+    for r in db.all_("SELECT v.viewer_id, v.viewed_at, u.username FROM status_views v JOIN users u ON "
+                     "u.id=v.viewer_id WHERE v.status_id=? ORDER BY v.viewed_at DESC", sid):
+        if user_settings(r["viewer_id"])["read_receipts"]:
+            viewers.append({"id": r["viewer_id"], "username": r["username"], "viewed_at": r["viewed_at"]})
+    total = db.one("SELECT COUNT(*) n FROM status_views WHERE status_id=?", sid)["n"]
+    return {"viewers": viewers, "total": total}
+
+
+@app.delete("/api/status/{sid}")
+def delete_status(sid: str, sess: Full):
+    me_ = sess["user_id"]
+    with db.tx() as c:
+        row = c.execute("SELECT user_id FROM statuses WHERE id=?", (sid,)).fetchone()
+        if not row or row["user_id"] != me_:
+            raise HTTPException(404, "Nicht gefunden")
+        files = [r["id"] for r in c.execute("SELECT id FROM files WHERE status_id=?", (sid,))]
+        c.execute("DELETE FROM files WHERE status_id=?", (sid,))
+        c.execute("DELETE FROM statuses WHERE id=?", (sid,))
+    for fid in files:
+        _unlink(fid)
+    for cid in accepted_ids(me_) | {me_}:
+        manager.notify(cid, {"type": "status_update"})
+    return {"ok": True}
+
+
+# =============================================================== Transkription (selbst gehostet)
+class ModelIn(BaseModel):
+    model: str
+
+
+@app.get("/api/transcription")
+def transcription_status(sess: Full):
+    return models_dl.status()
+
+
+@app.post("/api/transcription/install")
+def transcription_install(body: ModelIn, sess: Full):
+    rate(f"model:{sess['user_id']}", 10, 3600)
+    try:
+        models_dl.install_async(body.model)
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    return models_dl.status()
 
 
 # =============================================================== WebSocket
@@ -890,6 +1114,7 @@ async def websocket(ws: WebSocket):
 
 # =============================================================== Frontend
 app.mount("/static", StaticFiles(directory=config.STATIC_DIR), name="static")
+app.mount("/vendor", StaticFiles(directory=models_dl.VENDOR_DIR, check_dir=False), name="vendor")
 
 
 @app.get("/manifest.webmanifest")

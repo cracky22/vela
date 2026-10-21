@@ -114,6 +114,10 @@ def main() -> None:
                    help="Nur für lokale Entwicklung hinter einem TLS-Reverse-Proxy. Ohne TLS funktioniert die "
                         "Verschlüsselung im Browser nur unter http://localhost.")
     p.add_argument("--workers-threads", type=int, help="Größe des Thread-Pools (Standard 64)")
+    p.add_argument("--setup-transcription", nargs="?", const="onnx-community/whisper-tiny", metavar="MODELL",
+                   help="Transkriptions-Laufzeit und Whisper-Modell einmalig herunterladen und beenden "
+                        "(Standard: onnx-community/whisper-tiny; alternativ onnx-community/whisper-base). "
+                        "Geht auch bequem in der App unter Profil → Sprachnachrichten.")
     args = p.parse_args()
 
     check_requirements()
@@ -124,6 +128,12 @@ def main() -> None:
 
     from app import config  # noqa: E402  (nach dem Setzen der Umgebungsvariablen importieren)
     import uvicorn
+
+    if args.setup_transcription:
+        from app import models_dl
+        print(f"Lade Transkription herunter: {args.setup_transcription}")
+        models_dl.install_blocking(args.setup_transcription)
+        return
 
     ips = local_ips()
     ssl_kwargs = {}

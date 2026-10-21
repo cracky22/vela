@@ -84,7 +84,30 @@ CREATE TABLE IF NOT EXISTS files (
     expires_at  INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_files_message ON files(message_id);
+
+CREATE TABLE IF NOT EXISTS statuses (
+    id          TEXT PRIMARY KEY,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    envelope    TEXT NOT NULL,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_status_user ON statuses(user_id, expires_at);
+
+CREATE TABLE IF NOT EXISTS status_views (
+    status_id   TEXT NOT NULL REFERENCES statuses(id) ON DELETE CASCADE,
+    viewer_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    viewed_at   INTEGER NOT NULL,
+    PRIMARY KEY (status_id, viewer_id)
+);
 """
+
+# Spalten, die nach Version 1.0 hinzugekommen sind (Migration bestehender Datenbanken)
+MIGRATIONS = [
+    ("users", "about", "TEXT NOT NULL DEFAULT ''"),
+    ("users", "avatar_version", "INTEGER NOT NULL DEFAULT 0"),
+    ("files", "status_id", "TEXT"),
+]
 
 
 def now_ms() -> int:
@@ -125,8 +148,13 @@ def tx() -> Iterator[sqlite3.Connection]:
 def init() -> None:
     config.DATA_DIR.mkdir(parents=True, exist_ok=True)
     config.UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    (config.DATA_DIR / "avatars").mkdir(parents=True, exist_ok=True)
     c = _connect()
     c.executescript(SCHEMA)
+    for table, column, decl in MIGRATIONS:
+        cols = {r["name"] for r in c.execute(f"PRAGMA table_info({table})")}
+        if column not in cols:
+            c.execute(f"ALTER TABLE {table} ADD COLUMN {column} {decl}")
     c.close()
 
 
