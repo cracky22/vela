@@ -31,7 +31,7 @@ export async function saveIdentity(userId, identity, keyVersion) {
   const rec = { ...imported, keyVersion };
   await store.put('identity', userId, rec);
   // Klartext-Schlüsselmaterial aus dem Speicher entfernen (soweit JavaScript das zulässt)
-  identity.encPriv = identity.sigPriv = null;
+  identity.encPriv = identity.sigPriv = identity.encJwk = identity.sigJwk = null;
   S.keys = rec;
   return rec;
 }

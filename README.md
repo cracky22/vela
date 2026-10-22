@@ -42,6 +42,8 @@ Beim ersten Aufruf warnt der Browser vor dem selbstsignierten Zertifikat → „
    - Nachricht: **rechts** = reagieren, **links** = antworten, **doppeltippen** = ❤️, **lange drücken** = Menü, am Desktop: **Maus darüber** = Aktionsleiste
    - Mikrofon: **gedrückt halten** = aufnehmen (loslassen = senden, links wischen = verwerfen, hoch wischen = einrasten) oder **kurz tippen** = Aufnahme starten
 5. Unten (bzw. links am Desktop) wechselst du zwischen **Chats**, **Status** und **Profil** (Profilbild, Info, Einstellungen).
+6. **Gruppen**: „Neuer Chat“ → „Neue Gruppe“ (oder das Gruppen-Symbol oben). Tippe auf den Gruppennamen für die Gruppeninfo (Mitglieder, Admins, Bild, Timer).
+7. Im Chat-Menü (⋮): Suche, verschwindende Nachrichten, Stummschalten. Im Nachrichten-Menü: Bearbeiten, Weiterleiten, Info.
 
 ### Transkription einrichten (einmalig)
 
@@ -100,6 +102,8 @@ vela/
 │   └── js/
 │       ├── crypto.js      E2E: RSA-OAEP, ECDSA, AES-256-GCM, HKDF, Sicherheitsnummern
 │       ├── app.js         Navigation, Chatliste, Chat, Medien, Echtzeit
+│       ├── groups.js      Gruppen erstellen/verwalten, Weiterleiten, Timer
+│       ├── keycompat.js   Safari/iOS-Kompatibilität (JWK, RSA-OAEP-Fallback)
 │       ├── status.js      Status-Beiträge (24 h, E2E)
 │       ├── profile.js     Profil, Profilbild, Einstellungen
 │       ├── auth.js        Registrierung, 2FA, Wiederherstellung, Schlüsselrotation
@@ -115,7 +119,8 @@ vela/
 ```bash
 pip install playwright && python -m playwright install chromium
 python run.py            # in einem zweiten Terminal
-python tests/e2e_test.py
+python tests/e2e_test.py      # Einzelchats, Medien, Status, Profil
+python tests/e2e_groups.py    # Gruppen & Chat-Funktionen (3 Nutzer)
 ```
 
 Der Test registriert zwei Nutzer (Desktop + Pixel 7), tauscht Schlüssel aus, prüft Text, Sprachnachrichten (Tippen und Gedrückthalten, simuliertes Mikrofon), Status, Profilbild, Tipp-Indikator, Lesebestätigung, Bildkompression, Datei, Einmalansicht (inkl. Löschung auf dem Server), Reaktion, Wischen zum Archivieren, identische Sicherheitsnummern, dass der Server **nur Ciphertext** speichert, und die Schlüsselwiederherstellung auf einem neuen Gerät (iPhone 13). Er verwendet eine frische Datenbank am besten mit gelöschtem `data/`-Ordner.

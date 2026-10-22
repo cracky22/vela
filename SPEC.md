@@ -1,6 +1,8 @@
 # Vela – Feature-Spezifikation
 
-**Ende-zu-Ende-verschlüsselte Messaging-Plattform · Version 1.1 · Stand: Oktober 2026**
+**Ende-zu-Ende-verschlüsselte Messaging-Plattform · Version 1.2 · Stand: Oktober 2026**
+
+> **Neu in 1.2:** Gruppenchats (E2E, Admins, Mitgliederverwaltung), Nachrichten bearbeiten, Weiterleiten, Suche im Chat, verschwindende Nachrichten, Stummschalten, Online-Status, Ungelesen-Markierung, @Erwähnungen, Kamera-Aufnahme, Safari/iOS-Kompatibilität der Verschlüsselung (A7).
 
 > **Neu in 1.1:** Navigation (Chats · Status · Profil), Profilbild & Info, Status-Beiträge (E2E, 24 h), Sprachnachrichten mit Gedrückthalten + Wellenform, selbst gehostete Transkription, flackerfreie Darstellung, überarbeitetes Design.
 
@@ -157,6 +159,20 @@ Diese Spezifikation beschreibt jedes Feature im Format *Beschreibung → Technis
 
 **Akzeptanzkriterien**:
 - [x] Standardstart nur per HTTPS/WSS erreichbar, alle Sicherheits-Header gesetzt.
+
+### A7 · Browser-Kompatibilität (Safari/iOS)
+
+**Beschreibung**: Auf iPhone und iPad nutzen alle Browser (auch Chrome) WebKit. Dessen Web Crypto API hat zwei bekannte Einschränkungen, die in Version 1.1 zum Fehler *„Data provided to an operation does not meet requirements“* führten.
+
+**Ursachen**: (1) WebKit lehnt PKCS#8-kodierte EC-Privatschlüssel in bestimmten Kodierungen ab – auch selbst exportierte ([WebKit-Bug 233705](https://bugs.webkit.org/show_bug.cgi?id=233705), offen). (2) WebKit unterstützt RSA nur bis 4096 Bit; ein 8192-Bit-Schlüssel eines Kontakts ließ sich auf dem iPhone nicht importieren.
+
+**Technische Implementierung** (`static/js/keycompat.js`):
+- Private Schlüssel werden ab 1.2 als **JWK** erzeugt und gesichert (Format v2). Bestehende PKCS#8-Backups (v1) werden per minimalem DER-Parser in JWK umgewandelt; die EC-Koordinaten x/y stammen aus dem öffentlichen Schlüssel.
+- Lehnt der Browser einen RSA-Schlüssel ab, übernimmt eine **RSA-OAEP-Implementierung in JavaScript** (RFC 8017, SHA-256/MGF1, CRT, BigInt) – bitgenau kompatibel zur Web Crypto API (getestet in beide Richtungen, 2048/4096 Bit). Nur in diesem Fall liegt der private RSA-Schlüssel als JWK statt als nicht exportierbarer CryptoKey in IndexedDB.
+- Auf WebKit ist 8192 Bit bei der Erzeugung deaktiviert (Hinweis in der UI); Kontakte mit 8192-Bit-Schlüsseln bleiben über den Fallback erreichbar.
+- Registrierung prüft die Schlüssel **vor** dem Anlegen des Kontos; abgebrochene Registrierungen geben Name und E-Mail nach 10 Minuten wieder frei.
+
+**Akzeptanzkriterien**: [x] Interoperabilitätstest JS ↔ Web Crypto; [x] v1-Backups importierbar; [ ] Abnahme auf echtem iPhone (Safari & Chrome) – im Testsystem ist keine WebKit-Engine verfügbar.
 
 ---
 
@@ -432,6 +448,31 @@ Für den Produktivbetrieb zusätzlich: Verarbeitungsverzeichnis, Datenschutzerkl
 
 **Akzeptanzkriterien**: [x] Beitrag teilen, beim Kontakt anzeigen, beantworten (automatisierter Test); [x] serverseitige Löschung nach 24 h.
 
+### E7 · Gruppenchats
+
+**Beschreibung**: Gruppen mit bis zu 256 Mitgliedern. Alle Inhalte (Text, Bilder, Dateien, Sprachnachrichten, Reaktionen, Bearbeitungen) sind Ende-zu-Ende-verschlüsselt.
+
+**Technische Implementierung**: Der Absender verschlüsselt jede Nachricht mit einem neuen AES-256-GCM-Schlüssel und kapselt diesen per RSA-OAEP **für jedes aktuelle Mitglied einzeln** („Client-Side Fan-out“, wie bei Signal vor der Einführung von Sender Keys); die AAD bindet die Nachricht an die Gruppe (`g:<id>`). Der Server prüft, dass nur aktuelle Mitglieder Empfänger sind – entfernte Mitglieder erhalten keine Schlüssel mehr (automatisch getestet). Ändert sich die Mitgliederliste während des Sendens, verschlüsselt der Client neu. Mitglieder, die keine Kontakte sind, erhalten ihre öffentlichen Schlüssel über die Gruppe (TOFU, Prüfung über die Sicherheitsnummer im Mitgliedermenü); geänderte Schlüssel werden gewarnt und bis zur Bestätigung ausgeschlossen. Rollen: Admin/Mitglied; Admins fügen hinzu, entfernen, ernennen Admins und können Nachrichten für alle löschen; „Nur Admins dürfen Gruppeninfo ändern“. Der letzte Admin beim Austritt → ältestes Mitglied wird Admin; letzte Person → Gruppe inkl. Nachrichten und Dateien gelöscht. Lesebestätigungen über einen Lesestand pro Mitglied („Gelesen von …“ in der Nachrichteninfo). Systemnachrichten (erstellt, hinzugefügt, entfernt, Timer …) werden vom Server erzeugt.
+
+**Sicherheitsaspekte / ehrliche Einordnung**: Gruppenname, Beschreibung, Gruppenbild und Mitgliederliste sind für den Server sichtbar (Metadaten). Neue Mitglieder sehen keine älteren Nachrichten. Fan-out kostet pro Nachricht eine RSA-Operation je Mitglied (bei 256 Mitgliedern spürbar) – *Produktion*: **MLS (RFC 9420)** mit Forward Secrecy und effizientem Schlüsselwechsel.
+
+**Akzeptanzkriterien**: [x] Drei-Personen-Test inkl. Mitglieder ohne gegenseitigen Kontakt, Bild, Lesestand, Tippen, Admin-Aktionen, Entfernen, Austritt; [x] Server speichert nur Ciphertext.
+
+### E8 · Weitere Chat-Funktionen
+
+| Funktion | Umsetzung |
+|---|---|
+| Nachrichten bearbeiten | 15 Minuten lang, E2E als stille Nachricht `{t:'edit'}`; nur eigene Nachrichten werden angewendet; Anzeige „bearbeitet“; Desktop: Pfeil ↑ im leeren Feld |
+| Weiterleiten | an mehrere Chats/Gruppen; Anhänge werden für jeden Empfänger neu verschlüsselt und hochgeladen; Kennzeichnung „Weitergeleitet“ |
+| Suche im Chat | lokal über entschlüsselte Inhalte (Text, Bildunterschrift, Dateiname), Trefferzähler, Springen, Strg/⌘+F |
+| Verschwindende Nachrichten | 1 h / 24 h / 7 Tage / 90 Tage pro Chat bzw. Gruppe; der Server setzt das Ablaufdatum und löscht; Clients blenden abgelaufene Nachrichten aus |
+| Stummschalten | pro Chat/Gruppe; keine Browser-Benachrichtigung, gedämpftes Badge |
+| Online-Status | über WebSocket-Präsenz; in den Einstellungen abschaltbar („Online-Status zeigen“) |
+| Ungelesen-Markierung | Trenner „Ungelesene Nachrichten“, der Chat öffnet an dieser Stelle |
+| @Erwähnungen | Hervorhebung, eigene Erwähnungen markiert |
+| Antworten | Tippen auf das Zitat springt zur Originalnachricht |
+| Kamera | „Kamera“ im Anhang-Menü auf Mobilgeräten |
+
 # F) Cross-Platform-Konsistenz
 
 Die Referenz ist eine Web-App und läuft identisch auf iOS (Safari ≥ 16.4), Android (Chrome), Desktop (Chrome, Edge, Firefox, Safari). Alle Krypto-Operationen nutzen die standardisierte Web Crypto API, daher sind Umschläge zwischen allen Plattformen kompatibel. Native Apps (Produktion) müssen dasselbe Umschlagformat implementieren (Android: Tink/Conscrypt, iOS: CryptoKit + Security.framework für RSA-OAEP-SHA256).
@@ -441,7 +482,7 @@ Die Referenz ist eine Web-App und läuft identisch auf iOS (Safari ≥ 16.4), An
 1. **Forward Secrecy & Post-Compromise Security**: Signal-Protokoll (X3DH/PQXDH + Double Ratchet) für 1:1, **MLS (RFC 9420)** für Gruppen. RSA bleibt dann optional für Identitätsschlüssel.
 2. **Post-Quanten-Hybrid**: ML-KEM-768 (FIPS 203) zusätzlich zur klassischen Schlüsselkapselung.
 3. Passkeys (WebAuthn) als zweiter Faktor/Passwortersatz; Mehrgeräte-Verknüpfung per QR-Code statt Wiederherstellungsschlüssel.
-4. Gruppenchats, verschwindende Nachrichten mit Timer, Sealed Sender (Absender-Metadaten verbergen).
+4. Sealed Sender (Absender-Metadaten verbergen), verschlüsselte Gruppen-Metadaten, Anrufe (WebRTC, E2E).
 5. Native Apps mit `FLAG_SECURE`, Push über FCM/APNs, Hintergrundzustellung.
 6. Konfigurierbares CNSA-Profil (ECDSA P-384, SHA-384, RSA ≥ 3072).
 7. Unabhängiges Sicherheitsaudit und Bug-Bounty vor dem öffentlichen Start.

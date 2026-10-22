@@ -94,6 +94,44 @@ CREATE TABLE IF NOT EXISTS statuses (
 );
 CREATE INDEX IF NOT EXISTS idx_status_user ON statuses(user_id, expires_at);
 
+CREATE TABLE IF NOT EXISTS groups (
+    id              TEXT PRIMARY KEY,
+    name            TEXT NOT NULL,
+    description     TEXT NOT NULL DEFAULT '',
+    created_by      TEXT,
+    created_at      INTEGER NOT NULL,
+    avatar_version  INTEGER NOT NULL DEFAULT 0,
+    ttl             INTEGER NOT NULL DEFAULT 0,
+    only_admins     INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS group_members (
+    group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    user_id     TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role        TEXT NOT NULL CHECK (role IN ('admin','member')),
+    joined_at   INTEGER NOT NULL,
+    last_read   INTEGER NOT NULL DEFAULT 0,
+    archived    INTEGER NOT NULL DEFAULT 0,
+    pinned      INTEGER NOT NULL DEFAULT 0,
+    muted       INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY (group_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_gm_user ON group_members(user_id);
+
+CREATE TABLE IF NOT EXISTS group_messages (
+    id          TEXT PRIMARY KEY,
+    group_id    TEXT NOT NULL REFERENCES groups(id) ON DELETE CASCADE,
+    sender_id   TEXT,
+    envelope    TEXT,
+    system      TEXT,
+    silent      INTEGER NOT NULL DEFAULT 0,
+    created_at  INTEGER NOT NULL,
+    expires_at  INTEGER NOT NULL,
+    deleted_at  INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_gmsg ON group_messages(group_id, created_at);
+CREATE INDEX IF NOT EXISTS idx_gmsg_exp ON group_messages(expires_at);
+
 CREATE TABLE IF NOT EXISTS status_views (
     status_id   TEXT NOT NULL REFERENCES statuses(id) ON DELETE CASCADE,
     viewer_id   TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -107,6 +145,10 @@ MIGRATIONS = [
     ("users", "about", "TEXT NOT NULL DEFAULT ''"),
     ("users", "avatar_version", "INTEGER NOT NULL DEFAULT 0"),
     ("files", "status_id", "TEXT"),
+    # Version 1.2
+    ("files", "group_message_id", "TEXT"),
+    ("messages", "system", "TEXT"),
+    ("contacts", "ttl", "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 

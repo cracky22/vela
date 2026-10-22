@@ -4,9 +4,10 @@ import { h, clear, icon } from './util.js';
 import { api } from './api.js';
 import { field, button, progress, snackbar, confirm } from './ui.js';
 import {
-  generateIdentity, newRecoveryKey, parseRecoveryKey, makeBackup, openBackup, recoveryAuth,
+  generateIdentity, importIdentity, newRecoveryKey, parseRecoveryKey, makeBackup, openBackup, recoveryAuth,
 } from './crypto.js';
 import { S, saveIdentity } from './state.js';
+import { isWebKit } from './keycompat.js';
 
 let root, onAuthenticated;
 export function initAuth(rootEl, cb) { root = rootEl; onAuthenticated = cb; }
@@ -82,15 +83,17 @@ export function renderRegister(prefill = {}, errorMsg = '') {
     help: 'Nicht für andere sichtbar.' });
   const p1 = field({ label: 'Passwort (mind. 10 Zeichen)', name: 'password', type: 'password', autocomplete: 'new-password', attrs: { minlength: 10 } });
   const p2 = field({ label: 'Passwort wiederholen', name: 'password2', type: 'password', autocomplete: 'new-password' });
-  let bits = prefill.bits || 4096;
+  let bits = Math.min(prefill.bits || 4096, isWebKit() ? 4096 : 8192);
   const note = h('p', { class: 'key-note' });
   const chips = h('div', { class: 'chip-row', role: 'radiogroup', 'aria-label': 'Schlüssellänge' });
   const renderChips = () => {
     clear(chips, S.config.key_bits.map((b) => h('button', {
       type: 'button', role: 'radio', 'aria-checked': String(b === bits), class: 'chip' + (b === bits ? ' selected' : ''),
+      disabled: isWebKit() && b > 4096, title: isWebKit() && b > 4096 ? 'Safari/iOS unterstützt max. 4096 Bit' : null,
       onclick: () => { bits = b; renderChips(); },
     }, b === bits ? icon('check', 18) : null, KEY_INFO[b].label)));
-    note.textContent = `${KEY_INFO[bits].note} Erzeugung: ca. ${KEY_INFO[bits].time}.`;
+    note.textContent = `${KEY_INFO[bits].note} Erzeugung: ca. ${KEY_INFO[bits].time}.` +
+      (isWebKit() ? ' Hinweis: Safari/iOS kann höchstens 4096-Bit-Schlüssel erzeugen.' : '');
   };
   renderChips();
   const err = errorBox();
@@ -126,6 +129,8 @@ async function generateAndRegister(data) {
       h('p', { class: 'muted small' }, 'Dabei werden große Primzahlen gesucht. Das dauert je nach Gerät unterschiedlich lange – bitte die Seite geöffnet lassen.')));
   try {
     const identity = await generateIdentity(data.bits);
+    prog.set(null, 'Schlüssel werden geprüft …');
+    await importIdentity({ ...identity }); // erst lokal prüfen, dann Konto anlegen
     prog.set(null, 'Schlüssel-Backup wird verschlüsselt …');
     const recovery = newRecoveryKey();
     const { backup, authHex } = await makeBackup(identity, recovery.bytes, data.username);
@@ -263,8 +268,9 @@ export async function startRotate({ fromRestore = false, onCancel } = {}) {
   if (!ok) { onCancel?.(); return; }
   let bits = S.me.key_bits;
   const chips = h('div', { class: 'chip-row' });
+  if (isWebKit() && bits > 4096) bits = 4096;
   const renderChips = () => clear(chips, S.config.key_bits.map((b) => h('button', {
-    type: 'button', class: 'chip' + (b === bits ? ' selected' : ''), onclick: () => { bits = b; renderChips(); },
+    type: 'button', class: 'chip' + (b === bits ? ' selected' : ''), disabled: isWebKit() && b > 4096, onclick: () => { bits = b; renderChips(); },
   }, KEY_INFO[b].label)));
   renderChips();
   const c = field({ label: '2FA-Code', name: 'code', autocomplete: 'one-time-code', attrs: { inputmode: 'numeric', maxlength: 7 } });

@@ -14,7 +14,7 @@ let container = null;
 export function initProfile(c) { ctx = c; }
 
 // ---------------------------------------------------------------- Profilbild
-async function squareJpeg(file, size = 512) {
+export async function squareJpeg(file, size = 512) {
   let bmp;
   try { bmp = await createImageBitmap(file, { imageOrientation: 'from-image' }); } catch {
     const url = URL.createObjectURL(file);
@@ -112,6 +112,7 @@ export async function renderProfileView(root) {
       section('Privatsphäre', 'eye1',
         switchRow({ label: 'Lesebestätigungen senden', desc: 'Kontakte sehen, wann du ihre Nachrichten gelesen und ihren Status angesehen hast.', checked: S.me.settings.read_receipts, onChange: (v) => saveServerSettings({ read_receipts: v }) }),
         switchRow({ label: 'Tipp-Indikator senden', desc: '„schreibt …“ wird angezeigt, während du tippst.', checked: S.me.settings.typing_indicator, onChange: (v) => saveServerSettings({ typing_indicator: v }) }),
+        switchRow({ label: 'Online-Status zeigen', desc: 'Kontakte und Gruppenmitglieder sehen, wenn du online bist.', checked: S.me.settings.show_online !== false, onChange: (v) => saveServerSettings({ show_online: v }) }),
         switchRow({ label: 'Live-Typing', desc: 'Dein Gegenüber sieht deinen Text schon während des Tippens (Ende-zu-Ende-verschlüsselt, wird nicht gespeichert). Auch unfertige Sätze werden sichtbar.', checked: S.me.settings.live_typing, onChange: (v) => saveServerSettings({ live_typing: v }) }),
         h('p', { class: 'small muted' }, 'Profilbild und Info sehen nur deine angenommenen Kontakte. Sie sind auf dem Server nicht Ende-zu-Ende-verschlüsselt.')),
       section('Sprachnachrichten', 'mic',
