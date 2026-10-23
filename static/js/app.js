@@ -65,7 +65,7 @@ async function boot() {
   applyTheme(S.prefs.theme);
   initRipple();
   initAuth(root, afterLogin);
-  if (!cryptoAvailable()) return renderNoCrypto();
+  //if (!cryptoAvailable()) return renderNoCrypto();
   try { S.config = await api('/config'); } catch { /* Standardwerte */ }
   let status;
   try { status = await api('/auth/status'); } catch (e) { return renderFatal(e.message); }
