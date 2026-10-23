@@ -4,6 +4,9 @@ export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
+// Ermittelt automatisch, ob wir unter /vela oder im Root laufen
+const BASE_PATH = window.location.pathname.startsWith('/vela') ? '/vela' : '';
+
 function detail(data, fallback) {
   if (!data) return fallback;
   if (typeof data.detail === 'string') return data.detail;
@@ -19,7 +22,7 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
   }
   let res;
   try {
-    res = await fetch('/api' + path, opts);
+    res = await fetch(`${BASE_PATH}/api${path}`, opts);
   } catch {
     throw new ApiError(0, 'Keine Verbindung zum Server');
   }
@@ -33,7 +36,7 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
 export function uploadBlob(blob, onProgress, signal) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
-    xhr.open('POST', '/api/files');
+    xhr.open('POST', `${BASE_PATH}/api/files`);
     xhr.setRequestHeader('X-Requested-With', 'vela');
     xhr.setRequestHeader('Content-Type', 'application/octet-stream');
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
