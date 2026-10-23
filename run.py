@@ -114,16 +114,20 @@ def main() -> None:
                    help="Nur für lokale Entwicklung hinter einem TLS-Reverse-Proxy. Ohne TLS funktioniert die "
                         "Verschlüsselung im Browser nur unter http://localhost.")
     p.add_argument("--workers-threads", type=int, help="Größe des Thread-Pools (Standard 64)")
+    p.add_argument("--root-path", default=os.environ.get("VELA_ROOT_PATH", ""),
+                   help="Unterpfad für Reverse Proxy (z. B. /vela)")
     p.add_argument("--setup-transcription", nargs="?", const="onnx-community/whisper-tiny", metavar="MODELL",
                    help="Transkriptions-Laufzeit und Whisper-Modell einmalig herunterladen und beenden "
                         "(Standard: onnx-community/whisper-tiny; alternativ onnx-community/whisper-base). "
-                        "Geht auch bequem in der App unter Profil → Sprachnachrichten.")
+                        "Geht auch bequem in der App unter Profil -> Sprachnachrichten.")
     args = p.parse_args()
 
     check_requirements()
     os.environ["VELA_TLS"] = "0" if args.no_tls else "1"
     if args.workers_threads:
         os.environ["VELA_WORKER_THREADS"] = str(args.workers_threads)
+    if args.root_path:
+        os.environ["VELA_ROOT_PATH"] = args.root_path
     sys.path.insert(0, str(BASE))
 
     from app import config  # noqa: E402  (nach dem Setzen der Umgebungsvariablen importieren)
@@ -157,7 +161,8 @@ def main() -> None:
     print("  Beenden mit Strg+C\n")
 
     uvicorn.run("app.main:app", host=args.host, port=args.port, access_log=False, log_level="warning",
-                proxy_headers=False, server_header=False, ws_max_size=1_048_576, ws_ping_interval=25,
+                proxy_headers=True, forwarded_allow_ips="*", root_path=args.root_path,
+                server_header=False, ws_max_size=1_048_576, ws_ping_interval=25,
                 **ssl_kwargs)
 
 

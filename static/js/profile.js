@@ -1,7 +1,7 @@
 // Profil & Einstellungen (Navigationspunkt „Profil“): Profilbild, Info-Text, Sicherheit,
 // Privatsphäre, Transkription, Benachrichtigungen, Darstellung, DSGVO.
 import { h, clear, icon } from './util.js';
-import { api } from './api.js';
+import { api, BASE_PATH } from './api.js';
 import { shortFingerprint } from './crypto.js';
 import * as store from './store.js';
 import { S } from './state.js';
@@ -33,7 +33,7 @@ export async function squareJpeg(file, size = 512) {
 
 async function uploadAvatar(file) {
   const blob = await squareJpeg(file); // neu kodiert: entfernt EXIF/GPS
-  const res = await fetch('/api/me/avatar', { method: 'POST', body: blob, credentials: 'same-origin', headers: { 'X-Requested-With': 'vela', 'Content-Type': 'image/jpeg' } });
+  const res = await fetch(`${BASE_PATH}/api/me/avatar`, { method: 'POST', body: blob, credentials: 'same-origin', headers: { 'X-Requested-With': 'vela', 'Content-Type': 'image/jpeg' } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || 'Hochladen fehlgeschlagen');
   S.me.avatar_version = data.avatar_version;

@@ -43,3 +43,7 @@ ALLOWED_KEY_BITS = (2048, 3072, 4096, 8192)
 
 # Wird beim Start von run.py gesetzt: läuft der Server mit TLS?
 TLS_ENABLED = os.environ.get("VELA_TLS", "1") == "1"
+
+# Basis-Pfad hinter einem Reverse-Proxy (z. B. "/vela" oder "")
+ROOT_PATH = os.environ.get("VELA_ROOT_PATH", "").rstrip("/")
+

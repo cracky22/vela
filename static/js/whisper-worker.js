@@ -5,13 +5,16 @@ let asr = null;
 let loadedModel = null;
 let lib = null;
 
+// Dynamische Ermittlung des Basis-Pfads für den Web Worker
+const BASE_PATH = self.location.pathname.replace(/\/static\/.*$/, '').replace(/\/+$/, '') || (self.location.pathname.startsWith('/vela') ? '/vela' : '');
+
 async function loadLib(cfg) {
   if (lib) return lib;
-  lib = await import('/vendor/transformers.min.js');
+  lib = await import(`${BASE_PATH}/vendor/transformers.min.js`);
   const { env } = lib;
   env.allowRemoteModels = false;          // nie von Hugging Face nachladen
   env.allowLocalModels = true;
-  env.localModelPath = '/vendor/models/';
+  env.localModelPath = `${BASE_PATH}/vendor/models/`;
   env.useBrowserCache = true;             // Modell bleibt im Browser-Cache
   env.useWasmCache = false;               // WASM direkt von /vendor laden (kein Blob-Umweg)
   const wasm = env.backends?.onnx?.wasm;
@@ -22,7 +25,7 @@ async function loadLib(cfg) {
     const pick = (url, fallback) => {
       let name = (url || fallback).split('/').pop();
       if (!cfg.asyncify) name = name.replace('.asyncify', '');
-      return '/vendor/ort/' + name;
+      return `${BASE_PATH}/vendor/ort/` + name;
     };
     wasm.wasmPaths = {
       mjs: pick(def?.mjs, 'ort-wasm-simd-threaded.mjs'),

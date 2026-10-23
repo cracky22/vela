@@ -1,7 +1,7 @@
 // Gruppen: Erstellen, Gruppeninfo (Mitglieder, Admins, Bild, Beschreibung), Weiterleiten,
 // verschwindende Nachrichten. Inhalte bleiben E2E-verschlüsselt (siehe app.js → sendPayload).
 import { h, clear, icon, iconBtn } from './util.js';
-import { api } from './api.js';
+import { api, BASE_PATH } from './api.js';
 import { S } from './state.js';
 import { dialog, confirm, snackbar, menu, progress, field, switchRow, button } from './ui.js';
 import { squareJpeg } from './profile.js';
@@ -132,7 +132,7 @@ export function refreshGroupInfo() {
 
 async function uploadGroupAvatar(g, file) {
   const blob = await squareJpeg(file);
-  const res = await fetch(`/api/groups/${g.id}/avatar`, { method: 'POST', body: blob, credentials: 'same-origin', headers: { 'X-Requested-With': 'vela', 'Content-Type': 'image/jpeg' } });
+  const res = await fetch(`${BASE_PATH}/api/groups/${g.id}/avatar`, { method: 'POST', body: blob, credentials: 'same-origin', headers: { 'X-Requested-With': 'vela', 'Content-Type': 'image/jpeg' } });
   const data = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(data.detail || 'Hochladen fehlgeschlagen');
   await ctx.loadGroups();

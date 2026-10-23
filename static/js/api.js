@@ -4,8 +4,20 @@ export class ApiError extends Error {
   constructor(status, message) { super(message); this.status = status; }
 }
 
-// Ermittelt automatisch, ob wir unter /vela oder im Root laufen
-const BASE_PATH = window.location.pathname.startsWith('/vela') ? '/vela' : '';
+// Ermittelt dynamisch den Basis-Pfad (z. B. '/vela' oder '') für Reverse-Proxies
+export function getBasePath() {
+  if (typeof window === 'undefined') return '';
+  if (window.__VELA_BASE_PATH__ !== undefined) return window.__VELA_BASE_PATH__;
+  const path = window.location.pathname;
+  if (path.startsWith('/vela')) return '/vela';
+  const m = path.match(/^(.*?)(?:\/(?:static|api|vendor)(?:\/|$)|$)/);
+  if (m && m[1] && m[1] !== '/') {
+    return m[1].replace(/\/[^\/]+\.[a-zA-Z0-9]+$/, '').replace(/\/+$/, '');
+  }
+  return '';
+}
+
+export const BASE_PATH = getBasePath();
 
 function detail(data, fallback) {
   if (!data) return fallback;
@@ -21,8 +33,9 @@ export async function api(path, { method = 'GET', body, raw = false } = {}) {
     opts.body = JSON.stringify(body);
   }
   let res;
+  const url = `${BASE_PATH}/api${path.startsWith('/') ? path : '/' + path}`;
   try {
-    res = await fetch(`${BASE_PATH}/api${path}`, opts);
+    res = await fetch(url, opts);
   } catch {
     throw new ApiError(0, 'Keine Verbindung zum Server');
   }

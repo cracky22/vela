@@ -1,6 +1,6 @@
 // Steuert den Transkriptions-Worker und die einmalige Modell-Installation auf dem Server.
 import { decodeTo16k } from './media.js';
-import { api } from './api.js';
+import { api, BASE_PATH } from './api.js';
 
 let worker = null;
 let seq = 0;
@@ -13,7 +13,7 @@ function failAll(msg) {
 
 function getWorker() {
   if (!worker) {
-    worker = new Worker('/static/js/whisper-worker.js', { type: 'module' });
+    worker = new Worker(`${BASE_PATH}/static/js/whisper-worker.js`, { type: 'module' });
     worker.onmessage = (e) => {
       const d = e.data;
       if (d.type === 'fatal') { failAll(d.error); return; }

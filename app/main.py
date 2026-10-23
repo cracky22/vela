@@ -124,12 +124,65 @@ async def lifespan(_: FastAPI):
 app = FastAPI(title="Vela", lifespan=lifespan, docs_url=None, redoc_url=None, openapi_url=None)
 
 
+# =============================================================== Reverse-Proxy- & Präfix-Middleware
+class ProxyPrefixMiddleware:
+    """ASGI-Middleware zur Unterstützung von Reverse-Proxies und Unterpfaden (z. B. /vela):
+
+    * Wenn Anfragen über einen Subpath wie /vela eintreffen:
+      - /vela (ohne Slash) wird per 307-Redirect auf /vela/ umgeleitet, damit relative
+        Assets (HTML/CSS/JS) im Browser korrekt aufgelöst werden.
+      - Pfade wie /vela/api/... oder /vela/static/... werden intern auf /api/...
+        bzw. /static/... umgeschrieben und scope['root_path'] wird auf /vela gesetzt.
+    * Wenn ein Reverse-Proxy den Pfad bereits strippt und X-Forwarded-Prefix sendet:
+      - scope['root_path'] wird entsprechend gesetzt.
+    * Funktioniert transparent für HTTP-Requests und WebSockets (/vela/ws).
+    """
+
+    def __init__(self, app_):
+        self.app = app_
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] not in ("http", "websocket"):
+            return await self.app(scope, receive, send)
+
+        headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope.get("headers", [])}
+        path = scope.get("path", "")
+
+        configured_prefix = config.ROOT_PATH.rstrip("/")
+        fwd_prefix = headers.get("x-forwarded-prefix", "").rstrip("/")
+
+        prefix = ""
+        for cand in (configured_prefix, fwd_prefix, "/vela"):
+            if cand and (path == cand or path.startswith(cand + "/")):
+                prefix = cand
+                break
+
+        if prefix and path == prefix:
+            if scope["type"] == "http":
+                qs = scope.get("query_string", b"").decode("latin-1")
+                location = f"{prefix}/" + (f"?{qs}" if qs else "")
+                response = Response(status_code=307, headers={"Location": location})
+                return await response(scope, receive, send)
+
+        if prefix and path.startswith(prefix + "/"):
+            scope["root_path"] = prefix
+        elif fwd_prefix:
+            scope["root_path"] = fwd_prefix
+            scope["path"] = fwd_prefix + path
+        elif configured_prefix:
+            scope["root_path"] = configured_prefix
+            scope["path"] = configured_prefix + path
+
+        return await self.app(scope, receive, send)
+
+
 # =============================================================== Sicherheits-Middleware
 class SecurityMiddleware:
     """Reines ASGI-Middleware (kompatibel mit Streaming-Uploads und WebSockets):
 
     * CSRF-Schutz: zustandsändernde API-Aufrufe brauchen den Header `X-Requested-With: vela`
-      (lässt sich cross-origin nicht ohne CORS-Freigabe setzen) und eine passende Origin.
+      (lässt sich cross-origin nicht ohne CORS-Freigabe setzen) und eine passende Origin
+      (inkl. Unterstützung von Reverse-Proxy Host / X-Forwarded-Host).
     * Sicherheits-Header (CSP, HSTS, nosniff, Referrer-Policy, ...).
     """
 
@@ -140,15 +193,24 @@ class SecurityMiddleware:
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
         headers = {k.decode("latin-1").lower(): v.decode("latin-1") for k, v in scope["headers"]}
-        path, method, host = scope["path"], scope["method"], headers.get("host", "")
+        raw_path, method, host = scope["path"], scope["method"], headers.get("host", "")
+        root_path = scope.get("root_path", "")
+        path = raw_path[len(root_path):] if root_path and raw_path.startswith(root_path) else raw_path
+        effective_host = headers.get("x-forwarded-host") or host
 
         if path.startswith("/api/") and method not in ("GET", "HEAD", "OPTIONS"):
             origin = headers.get("origin")
-            if headers.get("x-requested-with") != "vela" or (origin and urlparse(origin).netloc != host):
+            origin_host = urlparse(origin).netloc.split(":")[0] if origin else ""
+            eff_host = effective_host.split(":")[0]
+            if headers.get("x-requested-with") != "vela" or (origin and origin_host != eff_host):
                 return await JSONResponse({"detail": "Anfrage abgelehnt (CSRF-Schutz)"}, 403)(scope, receive, send)
             cl = headers.get("content-length")
             if path not in ("/api/files", "/api/me/avatar") and cl and cl.isdigit() and int(cl) > config.MAX_JSON_BYTES:
                 return await JSONResponse({"detail": "Anfrage zu groß"}, 413)(scope, receive, send)
+
+        connect_hosts = f"wss://{effective_host} ws://{effective_host}"
+        if host and host != effective_host:
+            connect_hosts += f" wss://{host} ws://{host}"
 
         csp = (
             "default-src 'self'; "
@@ -156,10 +218,10 @@ class SecurityMiddleware:
             # Fremde Skript-Hosts sind nicht erlaubt – alle Dateien kommen vom eigenen Server.
             "script-src 'self' blob: 'wasm-unsafe-eval'; "
             "worker-src 'self' blob:; "
-            f"connect-src 'self' blob: wss://{host} ws://{host}; "
+            f"connect-src 'self' blob: {connect_hosts}; "
             "img-src 'self' blob: data:; media-src 'self' blob:; "
             "style-src 'self' 'unsafe-inline'; font-src 'self'; object-src 'none'; "
-            "base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+            "base-uri 'self'; frame-ancestors 'none'; form-action 'self'"
         )
 
         async def send_wrapper(message):
@@ -172,7 +234,7 @@ class SecurityMiddleware:
                 h["Cross-Origin-Opener-Policy"] = "same-origin"
                 h["Cross-Origin-Resource-Policy"] = "same-origin"
                 h["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)"
-                if config.TLS_ENABLED:
+                if config.TLS_ENABLED or headers.get("x-forwarded-proto") == "https":
                     h["Strict-Transport-Security"] = "max-age=31536000"
                 if path.startswith("/api/avatars/"):
                     h["Cache-Control"] = "private, max-age=86400"
@@ -186,6 +248,7 @@ class SecurityMiddleware:
 
 
 app.add_middleware(SecurityMiddleware)
+app.add_middleware(ProxyPrefixMiddleware)
 
 
 # =============================================================== Hilfsfunktionen
@@ -266,7 +329,8 @@ def lookup_session(token: str | None) -> dict[str, Any] | None:
 
 
 def get_session(request: Request) -> dict[str, Any]:
-    sess = lookup_session(request.cookies.get(COOKIE))
+    token = request.cookies.get(COOKIE) or request.cookies.get("vela_sid") or request.cookies.get("__Host-vela")
+    sess = lookup_session(token)
     if not sess:
         raise HTTPException(401, "Nicht angemeldet")
     return sess
@@ -1541,10 +1605,15 @@ def _typing_permission(me_: str, other: str) -> tuple[bool, bool, bool]:
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     origin = ws.headers.get("origin")
-    if origin and urlparse(origin).netloc != ws.headers.get("host"):
-        await ws.close(code=4403)
-        return
-    sess = await anyio.to_thread.run_sync(lookup_session, ws.cookies.get(COOKIE))
+    effective_host = ws.headers.get("x-forwarded-host") or ws.headers.get("host", "")
+    if origin:
+        orig_host = urlparse(origin).netloc.split(":")[0]
+        eff_host = effective_host.split(":")[0]
+        if orig_host != eff_host:
+            await ws.close(code=4403)
+            return
+    token = ws.cookies.get(COOKIE) or ws.cookies.get("vela_sid") or ws.cookies.get("__Host-vela")
+    sess = await anyio.to_thread.run_sync(lookup_session, token)
     if not sess or not sess["full"]:
         await ws.close(code=4401)
         return
@@ -1621,12 +1690,22 @@ app.mount("/vendor", StaticFiles(directory=models_dl.VENDOR_DIR, check_dir=False
 
 
 @app.get("/manifest.webmanifest")
-def manifest():
-    return FileResponse(config.STATIC_DIR / "manifest.webmanifest", media_type="application/manifest+json")
+def manifest(request: Request):
+    root = request.scope.get("root_path", "").rstrip("/")
+    data = json.loads((config.STATIC_DIR / "manifest.webmanifest").read_text(encoding="utf-8"))
+    if root:
+        data["start_url"] = f"{root}/"
+        data["scope"] = f"{root}/"
+        for icon in data.get("icons", []):
+            src = icon.get("src", "")
+            if not src.startswith("http") and not src.startswith(root):
+                clean_src = src.lstrip("./").lstrip("/")
+                icon["src"] = f"{root}/{clean_src}"
+    return JSONResponse(data, media_type="application/manifest+json")
 
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])
 def spa(path: str):
-    if path.startswith(("api/", "static/")):
+    if path.startswith(("api/", "static/", "vendor/")):
         raise HTTPException(404, "Nicht gefunden")
     return FileResponse(config.STATIC_DIR / "index.html", media_type="text/html")
