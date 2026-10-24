@@ -15,6 +15,17 @@ Liegt neben run.py und arbeitet direkt auf der Datenbank (der Server darf dabei 
     python admin.py delete max,peter -y  # Komma-getrennt, ohne Rückfrage
     python admin.py delete --pending     # alle nicht abgeschlossenen Registrierungen
 
+    # Inhalte vorzeitig löschen (statt 30 Tage Aufbewahrung abzuwarten), Konto bleibt bestehen:
+    python admin.py purge max --all                  # alles von max (Nachrichten, Anhänge, Status)
+    python admin.py purge max --text                 # nur Textnachrichten (ohne Anhang)
+    python admin.py purge max --attachments          # nur Nachrichten mit Anhang (Bilder/Audio/Dateien)
+    python admin.py purge max --attachments --min-mb 5 --older-than 7   # nur große Anhänge, älter als 7 Tage
+    python admin.py purge max peter --status --viewonce --in chats -y   # mehrere Nutzer, ohne Rückfrage
+
+Hinweis zu Bild/Audio/Datei: Alle Inhalte sind Ende-zu-Ende verschlüsselt. Der Server sieht nur,
+OB eine Nachricht Anhänge hat, nicht WAS es ist. Bild, Audio und Datei lassen sich daher nicht
+sauber trennen – näherungsweise hilft der Größenfilter (--min-mb / --max-mb).
+
 Nutzer können angegeben werden als: Benutzername, volle ID oder ID-Anfang (mind. 3 Zeichen,
 in der Liste wird der Anfang mit 8 Zeichen angezeigt).
 """
@@ -148,6 +159,10 @@ def cmd_info(a: argparse.Namespace) -> None:
         print(f"  Gruppen:       {db.one('SELECT COUNT(*) FROM group_members WHERE user_id=?', uid)[0]}")
         print(f"  Nachrichten:   {msgs}")
         print(f"  Dateien:       {files['n']} ({files['s'] / 1024 / 1024:.1f} MB)")
+        sel = collect(uid, CATS)
+        print("  Gesendete Inhalte (löschbar mit 'purge'):")
+        for cat in CATS:
+            print(f"    {CAT_LABEL[cat]:<42}{sel['count'][cat]}")
 
 
 def kill_sessions(c: sqlite3.Connection, uid: str) -> int:
@@ -265,6 +280,127 @@ def cmd_delete(a: argparse.Namespace) -> None:
     print("  Hinweis: Verbundene Clients der Kontakte aktualisieren sich beim nächsten Neuladen.")
 
 
+# ------------------------------------------------------------------ Inhalte löschen (purge)
+CATS = ("text", "attachments", "viewonce", "status")
+CAT_LABEL = {"text": "Textnachrichten (ohne Anhang)", "attachments": "Nachrichten mit Anhang (Bild/Audio/Datei)",
+             "viewonce": "Einmalansichten", "status": "Status"}
+MB = 1024 * 1024
+
+
+def collect(uid: str, cats, scope: str = "all", received: bool = False, older_days: int | None = None,
+            min_mb: float | None = None, max_mb: float | None = None) -> dict:
+    """Ermittelt, was gelöscht würde. Der Server kennt nur: Anhang ja/nein, Einmalansicht, Status."""
+    cats = set(cats)
+    lo = None if min_mb is None else min_mb * MB
+    hi = None if max_mb is None else max_mb * MB
+    cutoff = db.now_ms() - older_days * DAY_MS if older_days else None
+    out: dict = {"dm": [], "gm": [], "st": [], "loose": [], "count": dict.fromkeys(CATS, 0), "bytes": 0}
+
+    def ok(ts: int, size: int) -> bool:
+        return (cutoff is None or ts < cutoff) and (lo is None or size >= lo) and (hi is None or size <= hi)
+
+    def kind(view_once: int, nf: int) -> str:
+        return "viewonce" if view_once else ("attachments" if nf else "text")
+
+    if scope in ("all", "chats"):
+        who, args = ("(x.sender_id=? OR x.recipient_id=?)", (uid, uid)) if received else ("x.sender_id=?", (uid,))
+        for r in db.all_(
+                "SELECT x.id, x.view_once, x.created_at, "
+                "(SELECT COUNT(*) FROM files f WHERE f.message_id=x.id) AS nf, "
+                "(SELECT COALESCE(SUM(f.size),0) FROM files f WHERE f.message_id=x.id) AS fs "
+                f"FROM messages x WHERE x.deleted_at IS NULL AND x.system IS NULL AND {who}", *args):
+            k = kind(r["view_once"], r["nf"])
+            if k in cats and ok(r["created_at"], r["fs"]):
+                out["dm"].append(r["id"])
+                out["count"][k] += 1
+                out["bytes"] += r["fs"]
+    if scope in ("all", "groups"):
+        for r in db.all_(
+                "SELECT x.id, x.created_at, "
+                "(SELECT COUNT(*) FROM files f WHERE f.group_message_id=x.id) AS nf, "
+                "(SELECT COALESCE(SUM(f.size),0) FROM files f WHERE f.group_message_id=x.id) AS fs "
+                "FROM group_messages x WHERE x.deleted_at IS NULL AND x.system IS NULL AND x.sender_id=?", uid):
+            k = kind(0, r["nf"])
+            if k in cats and ok(r["created_at"], r["fs"]):
+                out["gm"].append(r["id"])
+                out["count"][k] += 1
+                out["bytes"] += r["fs"]
+    if "status" in cats and scope == "all":
+        for r in db.all_(
+                "SELECT x.id, x.created_at, (SELECT COALESCE(SUM(f.size),0) FROM files f WHERE f.status_id=x.id) AS fs "
+                "FROM statuses x WHERE x.user_id=?", uid):
+            if ok(r["created_at"], r["fs"]):
+                out["st"].append(r["id"])
+                out["count"]["status"] += 1
+                out["bytes"] += r["fs"]
+    if "attachments" in cats and scope == "all":  # hochgeladen, aber nie versendet
+        for r in db.all_("SELECT id, size, created_at FROM files WHERE owner_id=? AND message_id IS NULL "
+                         "AND status_id IS NULL AND group_message_id IS NULL", uid):
+            if ok(r["created_at"], r["size"]):
+                out["loose"].append(r["id"])
+                out["count"]["attachments"] += 1
+                out["bytes"] += r["size"]
+    return out
+
+
+def purge_user(sel: dict) -> int:
+    """Wie „Für alle löschen“ in der App: Nachricht wird zum Platzhalter (Ciphertext weg),
+    zugehörige Dateien werden entfernt. Status und lose Dateien werden ganz gelöscht."""
+    now = db.now_ms()
+    files: list[str] = []
+    with db.tx() as c:
+        for table, col, ids in (("messages", "message_id", sel["dm"]), ("group_messages", "group_message_id", sel["gm"])):
+            for mid in ids:
+                c.execute(f"UPDATE {table} SET envelope=NULL, deleted_at=? WHERE id=?", (now, mid))
+                files += [r["id"] for r in c.execute(f"SELECT id FROM files WHERE {col}=?", (mid,))]
+                c.execute(f"DELETE FROM files WHERE {col}=?", (mid,))
+        for sid in sel["st"]:
+            files += [r["id"] for r in c.execute("SELECT id FROM files WHERE status_id=?", (sid,))]
+            c.execute("DELETE FROM files WHERE status_id=?", (sid,))
+            c.execute("DELETE FROM statuses WHERE id=?", (sid,))
+        for fid in sel["loose"]:
+            c.execute("DELETE FROM files WHERE id=?", (fid,))
+            files.append(fid)
+    for fid in set(files):
+        (config.UPLOAD_DIR / fid).unlink(missing_ok=True)
+    return len(set(files))
+
+
+def cmd_purge(a: argparse.Namespace) -> None:
+    cats = set(CATS) if a.all else {c for c in CATS if getattr(a, c)}
+    if not cats:
+        print("Bitte angeben, was gelöscht werden soll: --text, --attachments, --viewonce, --status oder --all")
+        return
+    users, errors = resolve_many(a.users)
+    report_errors(errors)
+    plans = []
+    for u in users:
+        sel = collect(u["id"], cats, a.scope, a.received, a.older_than, a.min_mb, a.max_mb)
+        plans.append((u, sel))
+    if not plans:
+        return
+    print("Geplante Löschung (Konto bleibt bestehen):")
+    total = 0
+    for u, sel in plans:
+        parts = [f"{sel['count'][c]} {CAT_LABEL[c]}" for c in CATS if c in cats]
+        n = sum(sel["count"].values())
+        total += n
+        print(f"  - {u['username']:<20} {', '.join(parts)}  ({sel['bytes'] / MB:.1f} MB Dateien)")
+    if not total:
+        print("Nichts zu löschen.")
+        return
+    if not a.yes and not confirm("Wirklich löschen?"):
+        print("Abgebrochen.")
+        return
+    for u, sel in plans:
+        try:
+            nfiles = purge_user(sel)
+            print(f"  ✓ {u['username']}: {sum(sel['count'].values())} Einträge gelöscht, {nfiles} Datei(en) entfernt")
+        except Exception as e:
+            print(f"  ✗ {u['username']}: {e}")
+    print("  Hinweis: Offene Clients zeigen die Löschung nach Neuladen.")
+
+
 # ------------------------------------------------------------------ CLI
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="admin.py", description="Vela-Administration")
@@ -291,6 +427,24 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"zusätzlich alle nicht aktivierten Konten älter als {config.PENDING_ACCOUNT_HOURS} h")
     s.add_argument("--all-pending", action="store_true", help="mit --pending: unabhängig vom Alter")
     s.set_defaults(fn=cmd_delete)
+
+    s = sub.add_parser("purge", aliases=["clean"], help="Inhalte vorzeitig löschen (Konto bleibt)")
+    s.add_argument("users", nargs="+", metavar="NUTZER", help="Name, ID oder ID-Anfang (mehrere erlaubt)")
+    s.add_argument("--text", action="store_true", help="Textnachrichten ohne Anhang")
+    s.add_argument("--attachments", "--files", "--media", dest="attachments", action="store_true",
+                   help="Nachrichten mit Anhang (Bild/Audio/Datei – vom Server nicht unterscheidbar)")
+    s.add_argument("--viewonce", action="store_true", help="Einmalansicht-Nachrichten")
+    s.add_argument("--status", action="store_true", help="Status-Beiträge")
+    s.add_argument("--all", action="store_true", help="alles oben Genannte")
+    s.add_argument("--in", dest="scope", choices=["all", "chats", "groups"], default="all",
+                   help="nur Einzelchats oder nur Gruppen (Standard: all)")
+    s.add_argument("--received", action="store_true",
+                   help="auch Nachrichten, die der Nutzer in Einzelchats empfangen hat (Standard: nur gesendete)")
+    s.add_argument("--older-than", type=int, metavar="TAGE", help="nur Inhalte älter als TAGE")
+    s.add_argument("--min-mb", type=float, help="nur Anhänge ab dieser Größe (MB, verschlüsselt)")
+    s.add_argument("--max-mb", type=float, help="nur Anhänge bis zu dieser Größe (MB, verschlüsselt)")
+    s.add_argument("-y", "--yes", action="store_true", help="ohne Rückfrage")
+    s.set_defaults(fn=cmd_purge)
     return p
 
 
