@@ -134,7 +134,7 @@ export async function renderProfileView(root) {
         button('Meine Daten exportieren (DSGVO)', { kind: 'text', icon: 'download', onClick: exportData }),
         button('Abmelden', { kind: 'text', icon: 'logout', onClick: logoutDialog }),
         button('Konto löschen …', { kind: 'text', icon: 'delete', cls: 'danger', onClick: deleteAccountDialog })),
-      h('p', { class: 'small muted center' }, 'Vela · Referenzimplementierung · Web Crypto API')));
+      h('pre', { class: 'small muted center' }, 'Vela · v1.2.1 · Web Crypto API')));
   renderTranscription(tSlot);
 }
 
