@@ -15,6 +15,14 @@ Liegt neben run.py und arbeitet direkt auf der Datenbank (der Server darf dabei 
     python admin.py delete max,peter -y  # Komma-getrennt, ohne Rückfrage
     python admin.py delete --pending     # alle nicht abgeschlossenen Registrierungen
 
+    # Wartungsmodus (Banner "Wartungsarbeiten" in der App, ohne Server-Neustart):
+    python admin.py maintenance on                   # einschalten (Standardtext "Wartungsarbeiten")
+    python admin.py maintenance on Heute 22-23 Uhr   # mit eigenem Text
+    python admin.py maintenance off                  # ausschalten
+    python admin.py maintenance                      # Status anzeigen
+
+    python admin.py list --inactive 90               # seit 90 Tagen nicht gesehen
+
     # Inhalte vorzeitig löschen (statt 30 Tage Aufbewahrung abzuwarten), Konto bleibt bestehen:
     python admin.py purge max --all                  # alles von max (Nachrichten, Anhänge, Status)
     python admin.py purge max --text                 # nur Textnachrichten (ohne Anhang)
@@ -43,7 +51,7 @@ from pathlib import Path
 BASE = Path(__file__).resolve().parent
 sys.path.insert(0, str(BASE))
 
-from app import config, db  # noqa: E402
+from app import config, db, maintenance  # noqa: E402
 
 DAY_MS = 86_400_000
 
@@ -56,10 +64,22 @@ def ensure_schema() -> None:
     cols = {r["name"] for r in c.execute("PRAGMA table_info(users)")}
     if "blocked" not in cols:
         c.execute("ALTER TABLE users ADD COLUMN blocked INTEGER NOT NULL DEFAULT 0")
+    if "last_seen" not in cols:
+        c.execute("ALTER TABLE users ADD COLUMN last_seen INTEGER")
 
 
 def fmt_ts(ms: int | None) -> str:
     return datetime.fromtimestamp(ms / 1000).strftime("%d.%m.%Y %H:%M") if ms else "-"
+
+
+def seen_of(u: sqlite3.Row) -> str:
+    """Zuletzt gesehen: der Server schreibt den Wert beim Verbinden, Trennen und alle ~60 s."""
+    ts = u["last_seen"]
+    if not ts:
+        return "-"
+    if db.now_ms() - ts < 150_000:
+        return "online"
+    return fmt_ts(ts)
 
 
 def state_of(u: sqlite3.Row) -> str:
@@ -113,11 +133,10 @@ def print_table(rows: list[sqlite3.Row]) -> None:
     if not rows:
         print("Keine Nutzer gefunden.")
         return
-    print(f"{'ID':<9}{'Benutzername':<22}{'E-Mail':<32}{'Status':<11}{'Registriert':<17}Letzte Anmeldung")
+    print(f"{'ID':<9}{'Benutzername':<22}{'E-Mail':<32}{'Status':<11}{'Registriert':<17}Zuletzt gesehen")
     for u in rows:
-        last = db.one("SELECT MAX(created_at) AS t FROM sessions WHERE user_id=?", u["id"])["t"]
         print(f"{u['id'][:8]:<9}{u['username'][:21]:<22}{u['email'][:31]:<32}{state_of(u):<11}"
-              f"{fmt_ts(u['created_at']):<17}{fmt_ts(last)}")
+              f"{fmt_ts(u['created_at']):<17}{seen_of(u)}")
     print(f"\n{len(rows)} Nutzer")
 
 
@@ -133,6 +152,9 @@ def cmd_list(a: argparse.Namespace) -> None:
         where.append("blocked=1")
     if a.pending:
         where.append("activated=0")
+    if a.inactive:
+        where.append("COALESCE(last_seen, created_at) < ?")
+        args.append(db.now_ms() - a.inactive * DAY_MS)
     if a.search:
         where.append("(username LIKE ? OR email LIKE ? OR id LIKE ?)")
         args += [f"%{a.search}%"] * 3
@@ -154,6 +176,7 @@ def cmd_info(a: argparse.Namespace) -> None:
         print(f"  Registriert:   {fmt_ts(u['created_at'])}")
         print(f"  Schlüssel:     RSA-{u['key_bits']} (Version {u['key_version']})")
         print(f"  2FA aktiv:     {'ja' if u['totp_enabled'] else 'nein'}")
+        print(f"  Zuletzt gesehen: {seen_of(u)}")
         print(f"  Sitzungen:     {sess['n']} (letzte Anmeldung: {fmt_ts(sess['t'])})")
         print(f"  Kontakte:      {db.one('SELECT COUNT(*) FROM contacts WHERE user_id=?', uid)[0]}")
         print(f"  Gruppen:       {db.one('SELECT COUNT(*) FROM group_members WHERE user_id=?', uid)[0]}")
@@ -278,6 +301,26 @@ def cmd_delete(a: argparse.Namespace) -> None:
         except Exception as e:  # einzelner Fehler stoppt nicht die restlichen Löschungen
             print(f"  ✗ {u['username']}: {e}")
     print("  Hinweis: Verbundene Clients der Kontakte aktualisieren sich beim nächsten Neuladen.")
+
+
+# ------------------------------------------------------------------ Wartungsmodus
+def cmd_maintenance(a: argparse.Namespace) -> None:
+    action = (a.action or "status").lower()
+    if action == "on":
+        m = maintenance.set_(True, " ".join(a.text))
+        print(f"  ✓ Wartungsmodus AN: \"{m['message']}\"")
+        print("    Clients zeigen das gelbe Banner innerhalb weniger Sekunden (kein Server-Neustart nötig).")
+    elif action == "off":
+        maintenance.set_(False)
+        print("  ✓ Wartungsmodus AUS")
+    elif action == "status":
+        m = maintenance.get()
+        if m["on"]:
+            print(f"  Wartungsmodus: AN seit {fmt_ts(m['since'])} – \"{m['message']}\"")
+        else:
+            print("  Wartungsmodus: aus")
+    else:
+        print("Bitte 'on', 'off' oder 'status' angeben.")
 
 
 # ------------------------------------------------------------------ Inhalte löschen (purge)
@@ -410,6 +453,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-s", "--search", help="Suche in Name, E-Mail, ID")
     s.add_argument("--blocked", action="store_true", help="nur gesperrte")
     s.add_argument("--pending", action="store_true", help="nur nicht aktivierte")
+    s.add_argument("--inactive", type=int, metavar="TAGE", help="nur Nutzer, die seit TAGE Tagen nicht gesehen wurden")
     s.set_defaults(fn=cmd_list)
 
     for name, fn, helptext in (("info", cmd_info, "Details anzeigen"),
@@ -427,6 +471,11 @@ def build_parser() -> argparse.ArgumentParser:
                    help=f"zusätzlich alle nicht aktivierten Konten älter als {config.PENDING_ACCOUNT_HOURS} h")
     s.add_argument("--all-pending", action="store_true", help="mit --pending: unabhängig vom Alter")
     s.set_defaults(fn=cmd_delete)
+
+    s = sub.add_parser("maintenance", aliases=["wartung"], help="Wartungsmodus an/aus")
+    s.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
+    s.add_argument("text", nargs="*", help="Anzeigetext (nur bei 'on'), Standard: Wartungsarbeiten")
+    s.set_defaults(fn=cmd_maintenance)
 
     s = sub.add_parser("purge", aliases=["clean"], help="Inhalte vorzeitig löschen (Konto bleibt)")
     s.add_argument("users", nargs="+", metavar="NUTZER", help="Name, ID oder ID-Anfang (mehrere erlaubt)")
@@ -467,7 +516,7 @@ def main() -> None:
         run(sys.argv[1:], parser)
         return
     print("Vela-Admin – 'help' für Befehle, 'exit' zum Beenden.\n")
-    cmd_list(argparse.Namespace(search=None, blocked=False, pending=False))
+    cmd_list(argparse.Namespace(search=None, blocked=False, pending=False, inactive=None))
     while True:
         try:
             line = input("\nadmin> ").strip()
