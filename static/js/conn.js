@@ -1,6 +1,6 @@
 // Verbindungsstatus-Banner: Wartungsarbeiten (gelb), Offline (rot), Verbindung wiederhergestellt (grün).
 //
-// * Der Server meldet den Wartungsmodus über GET /api/status (öffentlich, ohne Anmeldung).
+// * Der Server meldet den Wartungsmodus über GET /api/maintenance (öffentlich, ohne Anmeldung).
 // * Der letzte bekannte Stand wird lokal zwischengespeichert. Ist der Server während der
 //   Wartung nicht erreichbar, zeigt die Oberfläche weiter "Wartungsarbeiten" statt "Offline".
 // * Der Stand wird regelmäßig neu abgefragt (und beim Zurückkehren in den Tab / bei "online").
@@ -62,7 +62,7 @@ async function check() {
   clearTimeout(pollTimer);
   let wasFail = poll === 'fail';
   try {
-    const d = await api('/status');
+    const d = await api('/maintenance');
     poll = 'ok';
     const next = { on: !!d.maintenance, message: d.message || '' };
     if (next.on !== maint.on || next.message !== maint.message) { maint = next; save(); }
