@@ -8,6 +8,7 @@ import { S } from './state.js';
 import { dialog, snackbar, menu, progress, field, switchRow, button } from './ui.js';
 import { startRotate } from './auth.js';
 import { MODELS, transcriptionStatus, installModel, waitForInstall } from './transcribe.js';
+import { version } from './app.js';
 
 let ctx = null;
 let container = null;
@@ -121,7 +122,7 @@ export async function renderProfileView(root) {
         h('div', { class: 'select-row' }, h('label', {}, 'Sprache'), select({ german: 'Deutsch', english: 'Englisch', auto: 'Automatisch erkennen' }, S.prefs.language, (v) => { S.prefs.language = v; store.setPref('language', v); }, 'Sprache')),
         tSlot),
       section('Benachrichtigungen', 'chat',
-        switchRow({ label: 'Browser-Benachrichtigungen', desc: 'Nur „Neue Nachricht von …“ – niemals der Inhalt.', checked: S.prefs.notifications && window.Notification?.permission === 'granted', onChange: async (v) => {
+        switchRow({ label: 'Browser-Benachrichtigungen', desc: 'Nur „Neue Nachricht von …“ - niemals der Inhalt.', checked: S.prefs.notifications && window.Notification?.permission === 'granted', onChange: async (v) => {
           if (v && window.Notification) {
             const perm = await Notification.requestPermission();
             if (perm !== 'granted') { snackbar('Benachrichtigungen wurden im Browser nicht erlaubt'); v = false; }
@@ -134,7 +135,7 @@ export async function renderProfileView(root) {
         button('Meine Daten exportieren (DSGVO)', { kind: 'text', icon: 'download', onClick: exportData }),
         button('Abmelden', { kind: 'text', icon: 'logout', onClick: logoutDialog }),
         button('Konto löschen …', { kind: 'text', icon: 'delete', cls: 'danger', onClick: deleteAccountDialog })),
-      h('pre', { class: 'small muted center' }, 'Vela · v1.2.1 · Web Crypto API')));
+      h('pre', { class: 'small muted center' }, 'com.crackyOS.vela · ' + version + ' · © 2026 Martin B.')));
   renderTranscription(tSlot);
 }
 

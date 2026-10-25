@@ -8,6 +8,7 @@ import {
 } from './crypto.js';
 import { S, saveIdentity } from './state.js';
 import { isWebKit } from './keycompat.js';
+import { version } from './app.js';
 
 let root, onAuthenticated;
 export function initAuth(rootEl, cb) { root = rootEl; onAuthenticated = cb; }
@@ -28,7 +29,8 @@ function brand(sub) {
 function page(...content) {
   clear(root, h('div', { class: 'auth-page' },
     h('div', { class: 'auth-card' }, ...content),
-    h('p', { class: 'auth-foot' }, icon('lock', 14), ' Ende-zu-Ende-verschlüsselt – der Server kann deine Nachrichten nicht lesen.')));
+    h('p', { class: 'auth-foot' }, icon('lock', 14), ' Ende-zu-Ende-verschlüsselt - der Server kann deine Nachrichten nicht lesen.'),
+    h('pre', { class: 'small muted center' }, 'com.crackyOS.vela · ' + version + ' · © 2026 Martin B.')));
   root.querySelector('input, textarea, button.btn.filled')?.focus({ preventScroll: true });
 }
 

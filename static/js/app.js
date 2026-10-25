@@ -44,6 +44,7 @@ S.changed = new Set(); // Nutzer, deren Schlüssel sich seit dem Anheften geänd
 S.names = new Map();   // Namen ausgetretener Mitglieder (aus Systemnachrichten)
 S.editing = null;
 
+export const version = 'v1.2.1';
 export const isGroup = (id) => S.groups.has(id);
 export const conv = (id) => S.contacts.get(id) || S.groups.get(id);
 export const convOf = (m) => m.group || (m.from === S.me.id ? m.to : m.from);
@@ -254,7 +255,7 @@ function renderEmptyChat() {
   clear(el.chatPane, h('div', { class: 'empty-chat' },
     h('div', { class: 'empty-icon' }, icon('lock', 48)),
     h('h2', {}, 'Wähle einen Chat'),
-    h('p', {}, 'Alle Nachrichten, Bilder, Dateien und Sprachnachrichten – auch in Gruppen – werden auf deinem Gerät verschlüsselt (RSA-OAEP + AES-256-GCM) und erst bei den Empfängern entschlüsselt.'),
+    h('p', {}, 'Alle Nachrichten, Bilder, Dateien und Sprachnachrichten werden auf deinem Gerät verschlüsselt (RSA-OAEP + AES-256-GCM) und erst bei den Empfängern entschlüsselt.'),
     h('p', { class: 'muted small' }, `Verschlüsselte Inhalte liegen höchstens ${S.config.retention_days} Tage auf dem Server.`)));
 }
 
@@ -407,8 +408,8 @@ function renderList() {
     if (firstContactLoad) return;
     const msg = S.search ? 'Keine Treffer.' : S.tab === 'requests' ? 'Keine offenen Kontaktanfragen.'
       : S.tab === 'archive' ? 'Archivierte Chats erscheinen hier. Wische einen Chat nach links, um ihn zu archivieren.'
-        : S.tab === 'groups' ? 'Noch keine Gruppen. Erstelle eine Gruppe mit deinen Kontakten – alle Nachrichten bleiben Ende-zu-Ende-verschlüsselt.'
-          : 'Noch keine Chats. Füge einen Kontakt über seinen Nutzernamen hinzu – nach der Annahme werden eure öffentlichen Schlüssel ausgetauscht.';
+        : S.tab === 'groups' ? 'Noch keine Gruppen. Erstelle eine Gruppe mit deinen Kontakten - alle Nachrichten bleiben Ende-zu-Ende-verschlüsselt.'
+          : 'Noch keine Chats. Füge einen Kontakt über seinen Nutzernamen hinzu.';
     const key = 'empty:' + msg;
     if (el.list.dataset.key !== key) {
       el.list.dataset.key = key;

@@ -123,7 +123,7 @@ export function renderStatusView() {
         h('button', { class: 'btn tonal small', type: 'button', onclick: () => pickPhoto() }, icon('camera', 18), 'Foto')) : null,
       section('Neue Updates', unseen), section('Angesehen', seen),
       !others.length ? h('div', { class: 'list-empty' }, h('div', { class: 'empty-icon small' }, icon('status', 32)),
-        h('p', {}, 'Noch keine Status-Updates von deinen Kontakten. Teile, was gerade los ist – nur deine Kontakte sehen es, und nach 24 Stunden ist es weg.')) : null,
+        h('p', {}, 'Noch keine Status-Updates von deinen Kontakten. Teile, was gerade los ist - nur deine Kontakte sehen es, und nach 24 Stunden ist es weg.')) : null,
       h('p', { class: 'status-note' }, icon('lock', 14), ' Status-Updates sind Ende-zu-Ende-verschlüsselt und verschwinden nach 24 Stunden.')),
     h('div', { class: 'fab-stack show-compact' },
       h('button', { class: 'fab small', type: 'button', 'aria-label': 'Text-Status', onclick: () => composeText() }, icon('edit', 22)),
