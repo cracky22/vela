@@ -13,10 +13,15 @@
 .admin-sel { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin-bottom: 8px; background: var(--secondary-container); color: var(--on-secondary-container); border-radius: var(--shape-m); }
 .admin-sel .grow { flex: 1; min-width: 120px; font-weight: 500; }
 .table-wrap { overflow-x: auto; border: 1px solid var(--outline-variant); border-radius: var(--shape-m); }
-table.admin-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+table.admin-table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: auto; }
+.admin-table tr.item { display: table-row; } /* app.css definiert .row als Flex – hier nicht erwünscht */
+.admin-table th:first-child, .admin-table td:first-child { width: 44px; padding-right: 0; }
+.admin-table td.name { min-width: 200px; }
+.admin-table td:nth-child(3), .admin-table td:nth-child(4) { white-space: nowrap; }
+.admin-table thead th { position: sticky; top: 0; }
 .admin-table th { text-align: left; font-weight: 500; color: var(--on-surface-variant); padding: 10px 12px; background: var(--surface-container-low); white-space: nowrap; }
 .admin-table td { padding: 9px 12px; border-top: 1px solid var(--outline-variant); vertical-align: middle; }
-.admin-table tr.row:hover td { background: var(--surface-container-low); }
+.admin-table tr.item:hover td { background: var(--surface-container-low); }
 .admin-table td.name { cursor: pointer; }
 .admin-table td.name b { font-weight: 500; }
 .admin-table input[type=checkbox] { width: 18px; height: 18px; accent-color: var(--primary); }

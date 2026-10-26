@@ -260,7 +260,7 @@ function renderSel() {
 function renderTable() {
   const all = h('input', { type: 'checkbox', 'aria-label': 'Alle auswählen', checked: st.users.length > 0 && st.users.every((u) => st.sel.has(u.id)),
     onchange: (e) => { for (const u of st.users) e.target.checked ? st.sel.add(u.id) : st.sel.delete(u.id); renderTable(); } });
-  const rows = st.users.map((u) => h('tr', { class: 'row' },
+  const rows = st.users.map((u) => h('tr', { class: 'item' },
     h('td', {}, h('input', { type: 'checkbox', 'aria-label': `${u.username} auswählen`, checked: st.sel.has(u.id),
       onchange: (e) => { e.target.checked ? st.sel.add(u.id) : st.sel.delete(u.id); renderSel(); } })),
     h('td', { class: 'name', onclick: () => detailDialog(u.id) }, h('b', {}, u.username), u.is_admin ? h('span', { class: 'pill admin' }, 'Admin') : null,
@@ -290,7 +290,7 @@ async function loadUsers() {
 async function loadAudit() {
   try {
     const d = await api('/admin/audit?limit=200');
-    const rows = d.entries.map((r) => h('tr', { class: 'row' },
+    const rows = d.entries.map((r) => h('tr', { class: 'item' },
       h('td', { class: 'small' }, fmtDT(r.ts)), h('td', {}, r.admin_name), h('td', {}, ACTION_LABEL[r.action] || r.action),
       h('td', {}, r.target), h('td', { class: 'small muted hide-sm' }, r.detail), h('td', { class: 'small mono hide-sm' }, r.ip)));
     clear(el.audit,
