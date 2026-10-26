@@ -143,6 +143,8 @@ JS_EDITS = [
      "  const ws = S.ws; S.ws = null; ws?.close();\n",
      "  const ws = S.ws; S.ws = null; ws?.close(); setWsState('none');\n"),
 
+]
+JS_OPTIONAL = [   # kosmetisch: fehlt der Einstiegspunkt, wird das übersprungen, ohne den Rest zu blockieren
     ("Version", "v1.3.0",
      "export const version = 'v1.2.1';",
      "export const version = 'v1.3.0';"),
@@ -173,7 +175,7 @@ def write(path: Path, text: str, eol: str) -> None:
     path.write_bytes(text.replace("\n", eol).encode("utf-8"))
 
 
-def patch(rel: str, edits: list) -> bool:
+def patch(rel: str, edits: list, optional: list = ()) -> bool:
     path = ROOT / rel
     if not path.exists():
         print(f"✗ {rel}: Datei nicht gefunden")
@@ -191,6 +193,14 @@ def patch(rel: str, edits: list) -> bool:
             continue
         new = new.replace(old, repl, 1)
         notes.append(f"  ✓ {desc}")
+    for desc, marker, old, repl in optional:
+        if marker in new:
+            notes.append(f"  = {desc} (schon vorhanden)")
+        elif new.count(old) == 1:
+            new = new.replace(old, repl, 1)
+            notes.append(f"  ✓ {desc}")
+        else:
+            notes.append(f"  - {desc}: übersprungen (nicht kritisch)")
     return finish(path, rel, text, new, eol, notes, ok)
 
 
@@ -226,7 +236,7 @@ def main() -> None:
         if not (ROOT / rel).exists():
             sys.exit(f"Fehlt: {rel} – bitte zuerst an den richtigen Ort kopieren.")
     results = [patch("app/db.py", DB_EDITS), patch("app/main.py", MAIN_EDITS),
-               patch("static/js/app.js", JS_EDITS), patch_css()]
+               patch("static/js/app.js", JS_EDITS, JS_OPTIONAL), patch_css()]
     print("\nFertig." if all(results) else "\nMit Fehlern beendet (siehe oben).")
     sys.exit(0 if all(results) else 1)
 
