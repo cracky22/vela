@@ -1,0 +1,1 @@
+window.__VELA_BASE_PATH__ = location.pathname.replace(/\/admin\/?$/, '');
