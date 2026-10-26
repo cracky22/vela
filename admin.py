@@ -23,6 +23,8 @@ Admin zu bestimmen und als Notfallzugang bei gestopptem Server.
     python admin.py purge max --attachments --min-mb 5 --older-than 7
     python admin.py purge max peter --status --viewonce --in chats -y
 
+    python admin.py doctor               # Selbstprüfung: richtige Dateien/Ordner/Datenbank? Web-Admin eingebunden?
+
 Nutzer: Benutzername, volle ID oder ID-Anfang (mind. 3 Zeichen).
 Hinweis zu Bild/Audio/Datei: Inhalte sind Ende-zu-Ende verschlüsselt, der Server sieht nur, OB eine
 Nachricht Anhänge hat – Bild, Audio und Datei sind nicht unterscheidbar (näherungsweise: --min-mb/--max-mb).
@@ -30,6 +32,7 @@ Nachricht Anhänge hat – Bild, Audio und Datei sind nicht unterscheidbar (näh
 from __future__ import annotations
 
 import argparse
+import os
 import shlex
 import sqlite3
 import sys
@@ -230,6 +233,33 @@ def cmd_maintenance(a: argparse.Namespace) -> None:
         print(f"  Wartungsmodus: AN seit {fmt_ts(m['since'])} – \"{m['message']}\"" if m["on"] else "  Wartungsmodus: aus")
 
 
+# ------------------------------------------------------------------ Befehl: doctor
+def cmd_doctor(a: argparse.Namespace) -> None:
+    """Zeigt, ob dieser Projektordner vollständig und der Web-Admin eingebunden ist."""
+    env = os.environ.get("VELA_DATA_DIR")
+    print(f"Projektordner:     {BASE}")
+    print(f"Datenverzeichnis:  {config.DATA_DIR}   (VELA_DATA_DIR {'= ' + env if env else 'nicht gesetzt'})")
+    size = f", {config.DB_PATH.stat().st_size / MB:.1f} MB" if config.DB_PATH.exists() else ""
+    print(f"Datenbank:         {config.DB_PATH}   ({'vorhanden' + size if config.DB_PATH.exists() else 'FEHLT'})")
+    main_py = BASE / "app" / "main.py"
+    text = main_py.read_text("utf-8", "replace") if main_py.exists() else ""
+    print("\nIn app/main.py:")
+    for desc, needle in (("Web-Admin eingebunden (admin_web.init)", "admin_web.init"),
+                         ("Wartungs-Endpunkt /api/maintenance", '"/api/maintenance"'),
+                         ("Sperr-Prüfung (u.blocked)", "u.blocked"),
+                         ("Zuletzt-gesehen (touch_last_seen)", "touch_last_seen")):
+        print(f"  {'✓' if needle in text else '✗'} {desc}")
+    print("\nDateien:")
+    for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "static/admin.html", "static/css/admin.css",
+                "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js"):
+        print(f"  {'✓' if (BASE / rel).exists() else '✗'} {rel}")
+    m = maintenance.get()
+    print(f"\nWartungsmodus:     {'AN – ' + m['message'] if m['on'] else 'aus'}")
+    admins = ops.list_users(admins=True)
+    print(f"Admins:            {', '.join(u['username'] for u in admins) if admins else 'keine (admins grant NAME)'}")
+    print("\nTipp: Läuft der Server aus einem anderen Ordner oder mit anderem VELA_DATA_DIR, gelten diese Werte nicht für ihn.")
+
+
 # ------------------------------------------------------------------ Befehl: Inhalte löschen (purge)
 def cmd_purge(a: argparse.Namespace) -> None:
     cats = set(CATS) if a.all else {c for c in CATS if getattr(a, c)}
@@ -294,6 +324,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("action", nargs="?", choices=["list", "grant", "revoke"], default="list")
     s.add_argument("users", nargs="*", metavar="NUTZER")
     s.set_defaults(fn=cmd_admins)
+
+    s = sub.add_parser("doctor", help="Selbstprüfung der Installation")
+    s.set_defaults(fn=cmd_doctor)
 
     s = sub.add_parser("maintenance", aliases=["wartung"], help="Wartungsmodus an/aus")
     s.add_argument("action", nargs="?", choices=["on", "off", "status"], default="status")
