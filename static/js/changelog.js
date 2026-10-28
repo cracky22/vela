@@ -5,18 +5,18 @@ import { dialog } from './ui.js';
 
 export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
 const KEY = 'vela:last-version';
-
+import { version } from './app.js';
 // Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
-    version: '1.2.5', date: '2026-10-27',
+    version: version, date: '2026-10-27',
     items: [
-      { icon: 'bell', title: 'Benachrichtigungen auch auf Android',
+      { icon: 'bell', title: 'Benachrichtigungen auch auf Android (Web-App)',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },
       { icon: 'warn', title: 'Wartungs- und Verbindungshinweise',
-        text: 'Bei Wartungsarbeiten zeigt Vela ein gelbes Banner. Ist die Verbindung weg, siehst du „Offline – verbinde neu …“ und danach „Verbindung wiederhergestellt“.' },
-      { icon: 'info', title: 'Neuigkeiten nach jedem Update',
-        text: 'Dieses Fenster zeigt dir künftig, was sich geändert hat. Alle Versionen findest du auf GitHub: Tippe im Profil auf die Versionsnummer.' },
+        text: 'Bei Wartungsarbeiten zeigt Vela jetzt nen gelben Banner. Ist die Verbindung furt, siehst du „Offline - verbinde neu …“ und wenn Verbindung wieder da „Verbindung wiederhergestellt“.' },
+      { icon: 'info', title: 'Neues Design',
+        text: 'Es kommen nochmal Updates was Darstellung angeht, aber es wird in diesem Theming bleiben circa.' },
     ],
   },
 ];
@@ -38,7 +38,7 @@ function render(entries) {
 
 /**
  * Zeigt den Dialog, wenn die App seit dem letzten Start aktualisiert wurde.
- * @param current  aktuelle Version (z. B. 'v1.3.0')
+ * @param current  aktuelle Version
  * @param me       eigenes Konto (created_at in ms): Bestandskonten sehen beim ersten Start den neuesten Eintrag,
  *                 frisch registrierte Konten nicht.
  * @returns        Promise, das nach dem Schließen erfüllt wird (oder sofort, wenn nichts anzuzeigen ist)
