@@ -149,6 +149,9 @@ MIGRATIONS = [
     ("files", "group_message_id", "TEXT"),
     ("messages", "system", "TEXT"),
     ("contacts", "ttl", "INTEGER NOT NULL DEFAULT 0"),
+    # Version 1.3
+    ("users", "blocked", "INTEGER NOT NULL DEFAULT 0"),
+    ("users", "last_seen", "INTEGER"),
 ]
 
 

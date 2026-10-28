@@ -22,7 +22,7 @@ const KEY_INFO = {
 
 function brand(sub) {
   return h('div', { class: 'brand' },
-    h('div', { class: 'brand-logo' }, icon('shield', 32)),
+    h('div', { class: 'brand-logo' }, h('img', { src: 'static/icon.svg', alt: '', width: 52, height: 52 })),
     h('div', {}, h('div', { class: 'brand-name' }, 'Vela'), h('div', { class: 'brand-sub' }, sub || 'Privat. Verschlüsselt. Einfach.')));
 }
 

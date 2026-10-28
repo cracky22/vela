@@ -723,7 +723,18 @@ h1, h2, h3 { margin: 0; font-weight: 400; }
 .snackbar span { flex: 1; padding: 6px 8px 6px 0; }
 
 /* Offline-Hinweis */
-body.offline .app-shell::before { content: "Offline – verbinde neu …"; position: fixed; top: calc(8px + var(--safe-top)); left: 50%; transform: translateX(-50%); z-index: 80; font-size: 12px; font-weight: 600; padding: 4px 12px; border-radius: var(--shape-full); background: var(--error-container); color: var(--on-error-container); box-shadow: var(--elev-2); animation: rise 240ms var(--ease-emph); }
+/* Verbindungs-/Wartungsbanner (conn.js) */
+.conn-banner { position: fixed; top: calc(8px + var(--safe-top)); left: 50%; transform: translateX(-50%); z-index: 90; display: flex; align-items: center; gap: 6px; max-width: calc(100vw - 24px); font-size: 12px; font-weight: 600; padding: 5px 14px; border-radius: var(--shape-full); box-shadow: var(--elev-2); animation: rise 240ms var(--ease-emph); pointer-events: none; }
+.conn-banner[hidden] { display: none; }
+.conn-banner.maint { background: #ffe082; color: #3b2f00; }
+.conn-banner.offline { background: var(--error-container); color: var(--on-error-container); }
+.conn-banner.ok { background: #b7f0c4; color: #0b3a1a; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .conn-banner.maint { background: #6b5600; color: #ffe9a6; }
+  :root:not([data-theme="light"]) .conn-banner.ok { background: #1f5a33; color: #c4f5d0; }
+}
+:root[data-theme="dark"] .conn-banner.maint { background: #6b5600; color: #ffe9a6; }
+:root[data-theme="dark"] .conn-banner.ok { background: #1f5a33; color: #c4f5d0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }

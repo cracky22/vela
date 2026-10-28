@@ -11,6 +11,7 @@ import {
 } from './crypto.js';
 import * as store from './store.js';
 import { S, cacheKey } from './state.js';
+import { cacheGet, cachePut, cacheDel, cachePrefetch, cachePrune, applyCacheEpoch, cacheMemoryClear } from './cache.js';
 import { initAuth, renderLogin, renderRestore } from './auth.js';
 import { dialog, confirm, snackbar, menu, progress, field, button, initRipple, reconcile } from './ui.js';
 import { swipeable } from './gestures.js';
@@ -18,6 +19,7 @@ import { prepareImage, startRecording, canPlayAudio } from './media.js';
 import { transcribe } from './transcribe.js';
 import { initStatus, renderStatusView, loadStatuses, statusEvent, hasUnseenStatus } from './status.js';
 import { initProfile, renderProfileView } from './profile.js';
+import { initConn, setWsState } from './conn.js';
 import { initGroups, createGroupDialog, openGroupInfo, refreshGroupInfo, forwardDialog, ttlDialog, TTL_LABELS } from './groups.js';
 
 const root = document.getElementById('app');
@@ -36,6 +38,7 @@ const rowNodes = new Map();     // Gesprächs-Schlüssel -> Zeile der Chatliste
 const previews = new Map();     // Gesprächs-ID -> { id, text }
 let hidden = new Set();
 let initialRender = true;
+let fatalShown = false;   // Fehlerseite sichtbar? (dann Seite neu laden, sobald der Server wieder da ist)
 
 // ================================================================= Gespräche & Nutzer
 S.groups = new Map();
@@ -65,6 +68,7 @@ async function boot() {
   };
   applyTheme(S.prefs.theme);
   initRipple();
+  initConn({ onReconnect: retryWS, onServerBack: () => { if (fatalShown) location.reload(); }, onCacheEpoch: (e) => applyCacheEpoch(e, onCacheCleared) });
   initAuth(root, afterLogin);
   //if (!cryptoAvailable()) return renderNoCrypto();
   try { S.config = await api('/config'); } catch { /* Standardwerte */ }
@@ -96,6 +100,7 @@ function renderNoCrypto() {
 }
 
 function renderFatal(msg) {
+  fatalShown = true;
   clear(root, h('div', { class: 'auth-page' }, h('div', { class: 'auth-card' },
     h('h1', { class: 'auth-title' }, 'Verbindung fehlgeschlagen'), h('p', {}, msg),
     button('Erneut versuchen', { onClick: () => location.reload() }))));
@@ -105,7 +110,7 @@ export function applyTheme(t) {
   if (t === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
   const dark = t === 'dark' || (t === 'auto' && matchMedia('(prefers-color-scheme: dark)').matches);
-  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#0e1513' : '#f4fbf8');
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', dark ? '#18120c' : '#fff8f4');
 }
 
 // ================================================================= Avatare
@@ -149,7 +154,7 @@ async function enterApp() {
   el.views = {
     chats: h('section', { class: 'view', dataset: { view: 'chats' } },
       h('header', { class: 'top-bar' },
-        h('div', { class: 'app-title' }, h('span', { class: 'brand-mini' }, icon('shield', 22)), 'Chats'),
+        h('div', { class: 'app-title' }, h('span', { class: 'brand-mini' }, h('img', { src: 'static/icon.svg', alt: '', width: 34, height: 34 })), 'Chats'),
         h('div', { class: 'spacer' }),
         iconBtn('group', 'Neue Gruppe', () => createGroupDialog()),
         iconBtn('person_add', 'Kontakt hinzufügen', addContactDialog, 'hide-compact')),
@@ -185,6 +190,15 @@ async function enterApp() {
   loadAll();
   loadStatuses().then(refreshNav).catch(() => {});
   connectWS();
+  applyCacheEpoch(S.me.cache_epoch, onCacheCleared);
+  setTimeout(() => cachePrune(S.config.retention_days), 8000);
+}
+
+// Der Admin hat den Cache geleert: Sitzungsspeicher verwerfen, alles neu entschlüsseln
+function onCacheCleared() {
+  S.decoded.clear(); S.dec = new Map(); previews.clear(); payloadNodes.clear(); msgNodes.clear(); cacheMemoryClear();
+  renderList();
+  if (S.chat) renderMessages();
 }
 
 function statusCtx() {
@@ -711,7 +725,7 @@ function decode(m) {
   if (S.decoded.has(m.id)) return S.decoded.get(m.id);
   const p = (async () => {
     if (!m.view_once) {
-      const cached = await store.get('cache', cacheKey(m.id)).catch(() => null);
+      const cached = await cacheGet(m.id);
       if (cached) return cached;
     }
     try {
@@ -719,7 +733,7 @@ function decode(m) {
       if (!verifyKey) return { error: 'Absender-Schlüssel unbekannt oder geändert – bitte Sicherheitsnummer prüfen' };
       const { payload } = await openMessage({ envelope: m.envelope, id: m.id, from: m.from, to: m.to, me: S.me.id, decKey: S.keys.encPriv, verifyKey });
       const res = { payload };
-      if (!m.view_once) store.put('cache', cacheKey(m.id), res).catch(() => {});
+      if (!m.view_once) cachePut(m.id, res);
       return res;
     } catch (e) {
       return { error: e.message || 'Entschlüsselung fehlgeschlagen' };
@@ -942,7 +956,7 @@ export async function renderMessages({ scroll } = {}) {
   const group = c?.kind === 'group';
   const list = S.messages.get(id) || [];
   const todo = list.filter((m) => m.envelope && !m.view_once && !S.dec.has(m.id));
-  if (todo.length) await Promise.all(todo.map(decode));
+  if (todo.length) { await cachePrefetch(todo.map((m) => m.id)); await Promise.all(todo.map(decode)); }
   if (token !== renderToken || S.chat !== id) return;
 
   const wasAtBottom = distanceFromBottom() < 120;
@@ -1729,7 +1743,7 @@ export async function sendPayload(convId, payload, { viewOnce = false, silent = 
     const res = { payload };
     S.decoded.set(id, Promise.resolve(res));
     S.dec.set(id, res);
-    store.put('cache', cacheKey(id), res).catch(() => {});
+    cachePut(id, res);
   }
   addMessage(local);
   await deliver(local);
@@ -2101,7 +2115,14 @@ setInterval(() => {
 }, 30000);
 
 // ================================================================= WebSocket
-let wsBackoff = 1000, wsTimer = 0;
+let wsBackoff = 1000, wsTimer = 0, pingTimer = 0;
+// Server wieder erreichbar (laut /api/status), aber WebSocket noch getrennt -> sofort neu verbinden
+function retryWS() { if (S.ws && S.ws.readyState === WebSocket.CLOSED) connectWS(); }
+// Alle 60 s ein Ping: hält "zuletzt gesehen" auf dem Server aktuell
+function startPing(ws) {
+  clearInterval(pingTimer);
+  pingTimer = setInterval(() => { if (ws.readyState === WebSocket.OPEN) ws.send('{"type":"ping"}'); }, 60000);
+}
 function connectWS() {
   clearTimeout(wsTimer);
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
@@ -2110,7 +2131,8 @@ function connectWS() {
   ws.onopen = () => {
     const reconnect = wsBackoff > 1000;
     wsBackoff = 1000;
-    document.body.classList.remove('offline');
+    setWsState('open');
+    startPing(ws);
     if (reconnect) { loadContacts(); loadGroups(); loadStatuses().then(refreshNav).catch(() => {}); if (S.chat) loadMessages(S.chat).then(() => renderMessages()); }
   };
   ws.onmessage = (e) => {
@@ -2121,7 +2143,7 @@ function connectWS() {
   ws.onclose = (e) => {
     if (S.ws !== ws) return;
     if (e.code === 4401) return sessionExpired();
-    document.body.classList.add('offline');
+    setWsState('closed');
     wsTimer = setTimeout(connectWS, wsBackoff);
     wsBackoff = Math.min(wsBackoff * 2, 30000);
   };
@@ -2151,6 +2173,9 @@ function handleEvent(ev) {
       if (incoming && S.chat === convId) markRead(convId);
       break;
     }
+    case 'cache_clear':
+      applyCacheEpoch(ev.epoch, onCacheCleared);
+      break;
     case 'read':
       for (const m of S.messages.get(ev.by) || []) if (m.from === S.me.id && m.ts <= ev.up_to && !m.read_at) m.read_at = Date.now();
       if (S.chat === ev.by) renderMessages();
@@ -2170,7 +2195,7 @@ function handleEvent(ev) {
         if (m) { m.envelope = null; m[ev.type === 'viewed' ? 'viewed_at' : 'deleted_at'] = ev.at; }
       }
       S.decoded.delete(ev.id); S.dec.delete(ev.id); payloadNodes.delete(ev.id);
-      store.del('cache', cacheKey(ev.id)).catch(() => {});
+      cacheDel(ev.id);
       for (const c of [...S.contacts.values(), ...S.groups.values()]) if (c.last?.id === ev.id) { c.last.envelope = null; c.last[ev.type === 'viewed' ? 'viewed_at' : 'deleted_at'] = ev.at; }
       renderList();
       if (S.chat) renderMessages();
@@ -2195,13 +2220,14 @@ function handleEvent(ev) {
 }
 
 function sessionExpired() {
+  setWsState('none');
   S.ws = null;
   renderLogin('Deine Sitzung ist abgelaufen. Bitte melde dich erneut an.');
 }
 
 export async function logout(wipe) {
   try { await api('/auth/logout', { method: 'POST' }); } catch { /* trotzdem lokal abmelden */ }
-  const ws = S.ws; S.ws = null; ws?.close();
+  const ws = S.ws; S.ws = null; ws?.close(); setWsState('none');
   if (wipe) await store.wipe();
   for (const b of S.blobs.values()) URL.revokeObjectURL(b.url);
   S.blobs.clear(); S.decoded.clear(); S.dec?.clear(); payloadNodes.clear(); msgNodes.clear(); rowNodes.clear();

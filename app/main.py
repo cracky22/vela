@@ -32,7 +32,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from starlette.datastructures import MutableHeaders
 
-from . import config, db, models_dl, security
+from . import clientcache, config, db, maintenance, models_dl, security
 from .security import limiter
 from .ws import manager
 
@@ -321,9 +321,9 @@ def lookup_session(token: str | None) -> dict[str, Any] | None:
     if not token:
         return None
     th = security.token_hash(token)
-    row = db.one("SELECT s.user_id, s.full, s.expires_at, u.username FROM sessions s "
+    row = db.one("SELECT s.user_id, s.full, s.expires_at, u.username, u.blocked FROM sessions s "
                  "JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?", th)
-    if not row or row["expires_at"] < db.now_ms():
+    if not row or row["expires_at"] < db.now_ms() or row["blocked"]:
         return None
     return {"user_id": row["user_id"], "full": bool(row["full"]), "username": row["username"], "token_hash": th}
 
@@ -496,6 +496,16 @@ def public_config():
             "key_bits": list(config.ALLOWED_KEY_BITS)}
 
 
+@app.get("/api/maintenance")
+def public_status(request: Request):
+    """Öffentlich (ohne Anmeldung): Wartungsmodus. Der Client fragt das regelmäßig ab."""
+    rate(f"status:{client_ip(request)}", 240, 60)
+    m = maintenance.get()
+    return JSONResponse({"maintenance": m["on"], "message": m["message"], "since": m["since"],
+                         "ts": db.now_ms(), "cache_epoch": clientcache.global_epoch()},
+                        headers={"Cache-Control": "no-store"})
+
+
 @app.post("/api/auth/register")
 def register(body: RegisterIn, request: Request, response: Response):
     rate(f"reg:{client_ip(request)}", 10, 3600)
@@ -542,6 +552,8 @@ def login(body: LoginIn, request: Request, response: Response):
     ok = security.verify_password(body.password, u["pw_hash"] if u else security.DUMMY_HASH)
     if not u or not ok:
         raise HTTPException(401, "Anmeldedaten ungültig")
+    if u["blocked"]:
+        raise HTTPException(403, "Dieses Konto wurde gesperrt.")
     if not u["totp_enabled"]:
         # Registrierung bzw. Wiederherstellung nicht abgeschlossen -> 2FA neu einrichten
         secret = security.new_totp_secret()
@@ -597,6 +609,7 @@ def me(sess: Session):
         "totp_enabled": bool(u["totp_enabled"]), "key_bits": u["key_bits"], "key_version": u["key_version"],
         "enc_pub": u["enc_pub"], "sig_pub": u["sig_pub"], "settings": user_settings(u["id"]),
         "created_at": u["created_at"], "about": u["about"], "avatar_version": u["avatar_version"],
+        "cache_epoch": clientcache.epoch_for(u["id"]),
     }
 
 
@@ -1602,6 +1615,15 @@ def _typing_permission(me_: str, other: str) -> tuple[bool, bool, bool]:
     return res
 
 
+def touch_last_seen(uid: str) -> None:
+    """Zuletzt gesehen: nur beim Verbinden, Trennen und alle ~60 s (Ping) – nicht pro Anfrage."""
+    try:
+        with db.tx() as c:
+            c.execute("UPDATE users SET last_seen=? WHERE id=?", (db.now_ms(), uid))
+    except Exception:  # pragma: no cover - nie die Verbindung gefährden
+        pass
+
+
 @app.websocket("/ws")
 async def websocket(ws: WebSocket):
     origin = ws.headers.get("origin")
@@ -1623,6 +1645,8 @@ async def websocket(ws: WebSocket):
     manager.add(uid, ws)
     if first:
         await _broadcast_presence(uid, True)
+    await anyio.to_thread.run_sync(touch_last_seen, uid)
+    last_touch = time.monotonic()
     bucket: list[float] = []
     try:
         while True:
@@ -1640,6 +1664,9 @@ async def websocket(ws: WebSocket):
             kind = data.get("type")
             if kind == "ping":
                 await ws.send_json({"type": "pong"})
+                if now - last_touch > 55:
+                    last_touch = now
+                    await anyio.to_thread.run_sync(touch_last_seen, uid)
             elif kind == "typing" and isinstance(data.get("group"), str):
                 gid, state = data["group"], data.get("state")
                 if not HEX32.match(gid) or state not in ("typing", "stop"):
@@ -1666,6 +1693,10 @@ async def websocket(ws: WebSocket):
     finally:
         manager.remove(uid, ws)
         if not manager.is_online(uid):
+            try:
+                await anyio.to_thread.run_sync(touch_last_seen, uid)
+            except Exception:  # pragma: no cover
+                pass
             try:
                 await _broadcast_presence(uid, False)
             except Exception:  # pragma: no cover
@@ -1702,6 +1733,15 @@ def manifest(request: Request):
                 clean_src = src.lstrip("./").lstrip("/")
                 icon["src"] = f"{root}/{clean_src}"
     return JSONResponse(data, media_type="application/manifest+json")
+
+
+# ---- Web-Admin (/admin, /api/admin/*) – muss VOR der SPA-Catch-all-Route registriert werden
+from . import admin_web  # noqa: E402
+
+admin_web.init(app, {
+    "COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate, "client_ip": client_ip,
+    "manager": manager, "leave_group": leave_group, "notify_group": notify_group,
+})
 
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])
