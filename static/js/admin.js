@@ -11,7 +11,7 @@ const CAT_LABEL = { text: 'Textnachrichten (ohne Anhang)', attachments: 'Nachric
 const ACTION_LABEL = {
   'user.block': 'Gesperrt', 'user.unblock': 'Entsperrt', 'user.logout': 'Abgemeldet', 'user.delete': 'Gelöscht',
   'user.purge': 'Inhalte gelöscht', 'maintenance.on': 'Wartung an', 'maintenance.off': 'Wartung aus',
-  'stepup.failed': '2FA fehlgeschlagen', 'admins.grant': 'Admin erteilt', 'admins.revoke': 'Admin entzogen',
+  'stepup.failed': '2FA fehlgeschlagen', 'cache.clear': 'Usercache geleert', 'admins.grant': 'Admin erteilt', 'admins.revoke': 'Admin entzogen',
 };
 
 // ---------------------------------------------------------------- Helfer
@@ -180,9 +180,31 @@ async function detailDialog(id) {
         ? { label: 'Entsperren', onClick: () => bulk('/admin/users/unblock', [id], 'Entsperrt') }
         : { label: 'Sperren', onClick: () => blockDialog([id]) }),
       !d.is_admin && { label: 'Abmelden', onClick: () => bulk('/admin/users/logout', [id], 'Abgemeldet') },
+      { label: 'Cache leeren …', onClick: () => cacheDialog([id]) },
       { label: 'Inhalte löschen …', onClick: () => purgeDialog([id]) },
       !d.is_admin && { label: 'Löschen …', danger: true, onClick: () => deleteDialog([id]) },
     ].filter(Boolean),
+  });
+}
+
+function cacheDialog(ids) {
+  const all = !ids.length;
+  const last = st.me.cache_epoch ? `Zuletzt global geleert: ${fmtDT(st.me.cache_epoch)}.` : 'Bisher noch nie geleert.';
+  dialog({
+    title: all ? 'Usercache aller Nutzer leeren?' : `Cache von ${names(ids).join(', ')} leeren?`, icon: 'refresh',
+    body: h('div', {},
+      h('p', {}, 'Die auf den Geräten zwischengespeicherten, bereits entschlüsselten Nachrichten werden gelöscht und beim nächsten Öffnen neu entschlüsselt. Das kostet kurz etwas Zeit, es geht nichts verloren: Schlüssel, Kontakte und die Nachrichten auf dem Server bleiben unverändert.'),
+      h('p', { class: 'small muted' }, 'Geräte, die gerade online sind, räumen sofort auf, alle anderen beim nächsten Start. ' + (all ? last : ''))),
+    actions: [{ label: 'Abbrechen' }, {
+      label: 'Cache leeren', tonal: true, danger: true,
+      onClick: async () => {
+        try {
+          const r = await write('/admin/cache/clear', { ids });
+          if (all) st.me.cache_epoch = r.epoch;
+          snackbar(`Cache-Leerung ausgelöst (${r.notified} online benachrichtigt)`);
+        } catch (e) { if (e.message !== 'Abgebrochen') snackbar(e.message); return false; }
+      },
+    }],
   });
 }
 
@@ -236,6 +258,7 @@ function renderHead() {
   clear(el.head,
     h('h1', {}, icon('shield', 26), 'Vela Admin', m.on ? h('span', { class: 'pill maint' }, 'Wartung an') : null),
     button(m.on ? 'Wartung beenden …' : 'Wartungsmodus …', { kind: 'tonal', icon: 'warn', onClick: maintenanceDialog }),
+    button('Usercache leeren …', { kind: 'tonal', icon: 'refresh', onClick: () => cacheDialog([]) }),
     h('a', { class: 'btn text', href: (BASE_PATH || '') + '/' }, 'Zur App'),
     h('span', { class: 'muted small' }, st.me.name));
   clear(el.tabs, [['users', 'Nutzer'], ['audit', 'Protokoll']].map(([k, l]) => h('button', {
@@ -253,6 +276,7 @@ function renderSel() {
     button('Entsperren', { kind: 'text', onClick: () => bulk('/admin/users/unblock', ids, 'Entsperrt') }),
     button('Abmelden', { kind: 'text', icon: 'logout', onClick: () => bulk('/admin/users/logout', ids, 'Abgemeldet') }),
     button('Inhalte löschen …', { kind: 'text', icon: 'delete', onClick: () => purgeDialog(ids) }),
+    button('Cache leeren', { kind: 'text', icon: 'refresh', onClick: () => cacheDialog(ids) }),
     button('Löschen …', { kind: 'text', icon: 'delete', cls: 'danger', onClick: () => deleteDialog(ids) }),
     button('Aufheben', { kind: 'text', onClick: () => { st.sel.clear(); renderTable(); } }));
 }

@@ -23,7 +23,7 @@ from fastapi.responses import FileResponse, RedirectResponse
 from pydantic import BaseModel, Field
 
 from . import admin_ops as ops
-from . import config, db, maintenance, security
+from . import clientcache, config, db, maintenance, security
 
 HEX32 = re.compile(r"^[0-9a-f]{32}$")
 STEPUP_SECONDS = 300
@@ -148,7 +148,8 @@ def _run(ids: list[str], admin: dict, fn, guard: bool = True) -> list[dict]:
 def me(admin: Admin):
     left = max(0, int(_stepup.get(admin["id"], 0) - time.monotonic()))
     return {"id": admin["id"], "name": admin["name"], "stepup_left": left, "maintenance": maintenance.get(),
-            "retention_days": config.RETENTION_DAYS, "nets_restricted": bool(NETS)}
+            "retention_days": config.RETENTION_DAYS, "nets_restricted": bool(NETS),
+            "cache_epoch": clientcache.global_epoch()}
 
 
 @router.post("/stepup")
@@ -301,6 +302,28 @@ def set_maintenance(body: MaintIn, admin: Stepped):
     ops.audit(admin["id"], admin["name"], "maintenance.on" if body.on else "maintenance.off",
               "", m["message"], admin["ip"])
     return m
+
+
+class CacheIn(BaseModel):
+    ids: list[str] = Field(default_factory=list, max_length=200)
+
+
+@router.post("/cache/clear")
+def clear_cache(body: CacheIn, admin: Stepped):
+    """„Usercache leeren“: Clients verwerfen ihren lokalen Entschlüsselungs-Cache (nie Schlüssel oder Nachrichten).
+    Ohne ids für alle Nutzer, sonst nur für die genannten. Online-Clients erfahren es sofort per WebSocket,
+    alle anderen beim nächsten Start."""
+    rows = _targets(body.ids)[0] if body.ids else []
+    if body.ids and not rows:
+        raise HTTPException(404, "Nutzer nicht gefunden")
+    epoch = clientcache.bump([u["id"] for u in rows] or None)
+    m = D["manager"]
+    targets = [u["id"] for u in rows] or list(m._conns.keys())
+    for uid in targets:
+        m.notify(uid, {"type": "cache_clear", "epoch": epoch})
+    scope = ", ".join(u["username"] for u in rows) if rows else "alle Nutzer"
+    ops.audit(admin["id"], admin["name"], "cache.clear", scope[:200], f"{len(targets)} online benachrichtigt", admin["ip"])
+    return {"epoch": epoch, "notified": len(targets), "scope": scope}
 
 
 @router.get("/audit")
