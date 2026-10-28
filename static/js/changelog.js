@@ -9,7 +9,7 @@ const KEY = 'vela:last-version';
 // Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
-    version: '1.3.0', date: '2026-10-27',
+    version: '1.2.5', date: '2026-10-27',
     items: [
       { icon: 'bell', title: 'Benachrichtigungen auch auf Android',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },
