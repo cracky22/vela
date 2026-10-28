@@ -5,7 +5,7 @@ import { version } from './app.js';
 import { dialog } from './ui.js';
 
 export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
-const KEY = 'vela:' + version + ':changelog';
+const KEY = 'vela:last-version';
 export const CHANGELOG = [
   {
     version: version, date: '2026-10-27',
