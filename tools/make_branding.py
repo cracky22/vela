@@ -40,32 +40,44 @@ def hexs(i: int) -> str:
     return "#%06x" % (i & 0xFFFFFF)
 
 
+def scheme(dark: bool) -> dict[str, str]:
+    """Material-3-Farbrollen aus der Icon-Farbe: Ton 48 (hell) bzw. 80 (dunkel) der Palette um #ab6b11 = das Icon-Orange."""
+    from materialyoucolor.palettes.tonal_palette import TonalPalette as TP
+    hue = 67.0                                           # Farbton von #ab6b11 (HCT)
+    P, S = TP.from_hue_and_chroma(hue, 90), TP.from_hue_and_chroma(hue, 24)
+    T, E = TP.from_hue_and_chroma(hue + 62, 36), TP.from_hue_and_chroma(25, 84)
+    N, V = TP.from_hue_and_chroma(hue, 7), TP.from_hue_and_chroma(hue, 14)
+    t = lambda pal, tone: hexs(pal.tone(tone))
+    if not dark:
+        return {"primary": t(P, 48), "on-primary": t(P, 100), "primary-container": t(P, 90), "on-primary-container": t(P, 10),
+                "secondary": t(S, 40), "on-secondary": t(S, 100), "secondary-container": t(S, 90), "on-secondary-container": t(S, 10),
+                "tertiary": t(T, 40), "on-tertiary": t(T, 100), "tertiary-container": t(T, 90), "on-tertiary-container": t(T, 10),
+                "error": t(E, 40), "on-error": t(E, 100), "error-container": t(E, 90), "on-error-container": t(E, 10),
+                "surface": t(N, 98), "surface-dim": t(N, 87), "surface-bright": t(N, 98), "surface-container-lowest": t(N, 100),
+                "surface-container-low": t(N, 96), "surface-container": t(N, 94), "surface-container-high": t(N, 92), "surface-container-highest": t(N, 90),
+                "on-surface": t(N, 10), "on-surface-variant": t(V, 30), "outline": t(V, 50), "outline-variant": t(V, 80),
+                "inverse-surface": t(N, 20), "inverse-on-surface": t(N, 95), "inverse-primary": t(P, 80)}
+    return {"primary": t(P, 80), "on-primary": t(P, 20), "primary-container": t(P, 30), "on-primary-container": t(P, 90),
+            "secondary": t(S, 80), "on-secondary": t(S, 20), "secondary-container": t(S, 30), "on-secondary-container": t(S, 90),
+            "tertiary": t(T, 80), "on-tertiary": t(T, 20), "tertiary-container": t(T, 30), "on-tertiary-container": t(T, 90),
+            "error": t(E, 80), "on-error": t(E, 20), "error-container": t(E, 30), "on-error-container": t(E, 90),
+            "surface": t(N, 6), "surface-dim": t(N, 6), "surface-bright": t(N, 24), "surface-container-lowest": t(N, 4),
+            "surface-container-low": t(N, 10), "surface-container": t(N, 12), "surface-container-high": t(N, 17), "surface-container-highest": t(N, 22),
+            "on-surface": t(N, 90), "on-surface-variant": t(V, 80), "outline": t(V, 60), "outline-variant": t(V, 30),
+            "inverse-surface": t(N, 90), "inverse-on-surface": t(N, 20), "inverse-primary": t(P, 40)}
+
+
 def theme_css() -> str:
-    from materialyoucolor.hct import Hct
-    from materialyoucolor.scheme.scheme_fidelity import SchemeFidelity
-    from materialyoucolor.dynamiccolor.material_dynamic_colors import MaterialDynamicColors as M
-    names = {"primary": "primary", "onPrimary": "on-primary", "primaryContainer": "primary-container", "onPrimaryContainer": "on-primary-container",
-             "secondary": "secondary", "onSecondary": "on-secondary", "secondaryContainer": "secondary-container", "onSecondaryContainer": "on-secondary-container",
-             "tertiary": "tertiary", "onTertiary": "on-tertiary", "tertiaryContainer": "tertiary-container", "onTertiaryContainer": "on-tertiary-container",
-             "error": "error", "onError": "on-error", "errorContainer": "error-container", "onErrorContainer": "on-error-container",
-             "surface": "surface", "surfaceDim": "surface-dim", "surfaceBright": "surface-bright",
-             "surfaceContainerLowest": "surface-container-lowest", "surfaceContainerLow": "surface-container-low", "surfaceContainer": "surface-container",
-             "surfaceContainerHigh": "surface-container-high", "surfaceContainerHighest": "surface-container-highest",
-             "onSurface": "on-surface", "onSurfaceVariant": "on-surface-variant", "outline": "outline", "outlineVariant": "outline-variant",
-             "inverseSurface": "inverse-surface", "inverseOnSurface": "inverse-on-surface", "inversePrimary": "inverse-primary"}
-    seed = Hct.from_int(SEED)
-    blocks = {}
-    for dark in (False, True):
-        s = SchemeFidelity(seed, dark, 0.0)
-        vals = {css: hexs(getattr(M, k).get_hct(s).to_int()) for k, css in names.items()}
+    def block(dark: bool, indent: str) -> str:
+        vals = scheme(dark)
         warn = ("--warn-container: #5a4600; --on-warn-container: #ffe9a8;" if dark else "--warn-container: #ffe9a8; --on-warn-container: #2a2000;")
-        blocks[dark] = "  " + "; ".join(f"--{k}: {v}" for k, v in vals.items()) + ";\n  " + warn + "\n"
-    light, dark = blocks[False], blocks[True]
-    return ("/* Vela-Farbschema (Material 3), erzeugt aus der Markenfarbe #ab6b11 mit tools/make_branding.py.\n"
+        body = ";\n".join(f"{indent}--{k}: {v}" for k, v in vals.items())
+        return f"{body};\n{indent}{warn}\n"
+    return ("/* Vela-Farbschema (Material 3) im Orange des App-Icons (#ab6b11), erzeugt mit tools/make_branding.py.\n"
             "   Wird NACH app.css geladen und überschreibt nur die Farbrollen. Zum Zurücksetzen den <link> entfernen. */\n"
-            f":root {{\n{light}  --bubble-mine: var(--secondary-container); --on-bubble-mine: var(--on-secondary-container);\n}}\n"
-            f"@media (prefers-color-scheme: dark) {{\n  :root:not([data-theme=\"light\"]) {{\n{dark.replace(chr(10) + '  ', chr(10) + '    ').replace('  --', '    --', 1)}  }}\n}}\n"
-            f":root[data-theme=\"dark\"] {{\n{dark}}}\n\n"
+            f":root {{\n{block(False, '  ')}}}\n"
+            f"@media (prefers-color-scheme: dark) {{\n  :root:not([data-theme=\"light\"]) {{\n{block(True, '    ')}  }}\n}}\n"
+            f":root[data-theme=\"dark\"] {{\n{block(True, '  ')}}}\n\n"
             "/* Logo: das App-Icon ersetzt das Schild-Symbol */\n"
             ".boot-logo, .brand-logo, .brand-mini { background: none !important; box-shadow: none; overflow: hidden; animation-duration: 1.8s; }\n"
             ".boot-logo img, .brand-logo img, .brand-mini img { width: 100%; height: 100%; display: block; }\n")
