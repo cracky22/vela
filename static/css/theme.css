@@ -1,0 +1,110 @@
+/* Vela-Farbschema (Material 3) im Orange des App-Icons (#ab6b11), erzeugt mit tools/make_branding.py.
+   Wird NACH app.css geladen und überschreibt nur die Farbrollen. Zum Zurücksetzen den <link> entfernen. */
+:root {
+  --primary: #a46300;
+  --on-primary: #ffffff;
+  --primary-container: #ffdcbb;
+  --on-primary-container: #2c1700;
+  --secondary: #7a5832;
+  --on-secondary: #ffffff;
+  --secondary-container: #ffdcbb;
+  --on-secondary-container: #2c1700;
+  --tertiary: #4f6629;
+  --on-tertiary: #ffffff;
+  --tertiary-container: #d1eca0;
+  --on-tertiary-container: #121f00;
+  --error: #ba1a1a;
+  --on-error: #ffffff;
+  --error-container: #ffdad6;
+  --on-error-container: #410002;
+  --surface: #fff8f4;
+  --surface-dim: #e7d7ca;
+  --surface-bright: #fff8f4;
+  --surface-container-lowest: #ffffff;
+  --surface-container-low: #fff1e7;
+  --surface-container: #fbebde;
+  --surface-container-high: #f6e5d8;
+  --surface-container-highest: #f0e0d2;
+  --on-surface: #221a12;
+  --on-surface-variant: #56432f;
+  --outline: #8a735c;
+  --outline-variant: #ddc2a8;
+  --inverse-surface: #382f26;
+  --inverse-on-surface: #feeee0;
+  --inverse-primary: #ffb869;
+  --warn-container: #ffe9a8; --on-warn-container: #2a2000;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --primary: #ffb869;
+    --on-primary: #482900;
+    --primary-container: #673d00;
+    --on-primary-container: #ffdcbb;
+    --secondary: #ebbe90;
+    --on-secondary: #462a08;
+    --secondary-container: #5f401d;
+    --on-secondary-container: #ffdcbb;
+    --tertiary: #b5d087;
+    --on-tertiary: #233600;
+    --tertiary-container: #384d13;
+    --on-tertiary-container: #d1eca0;
+    --error: #ffb4ab;
+    --on-error: #690005;
+    --error-container: #93000a;
+    --on-error-container: #ffdad6;
+    --surface: #19120a;
+    --surface-dim: #19120a;
+    --surface-bright: #41372e;
+    --surface-container-lowest: #140d06;
+    --surface-container-low: #221a12;
+    --surface-container: #261e16;
+    --surface-container-high: #312820;
+    --surface-container-highest: #3c332a;
+    --on-surface: #f0e0d2;
+    --on-surface-variant: #ddc2a8;
+    --outline: #a58c75;
+    --outline-variant: #56432f;
+    --inverse-surface: #f0e0d2;
+    --inverse-on-surface: #382f26;
+    --inverse-primary: #885200;
+    --warn-container: #5a4600; --on-warn-container: #ffe9a8;
+  }
+}
+:root[data-theme="dark"] {
+  --primary: #ffb869;
+  --on-primary: #482900;
+  --primary-container: #673d00;
+  --on-primary-container: #ffdcbb;
+  --secondary: #ebbe90;
+  --on-secondary: #462a08;
+  --secondary-container: #5f401d;
+  --on-secondary-container: #ffdcbb;
+  --tertiary: #b5d087;
+  --on-tertiary: #233600;
+  --tertiary-container: #384d13;
+  --on-tertiary-container: #d1eca0;
+  --error: #ffb4ab;
+  --on-error: #690005;
+  --error-container: #93000a;
+  --on-error-container: #ffdad6;
+  --surface: #19120a;
+  --surface-dim: #19120a;
+  --surface-bright: #41372e;
+  --surface-container-lowest: #140d06;
+  --surface-container-low: #221a12;
+  --surface-container: #261e16;
+  --surface-container-high: #312820;
+  --surface-container-highest: #3c332a;
+  --on-surface: #f0e0d2;
+  --on-surface-variant: #ddc2a8;
+  --outline: #a58c75;
+  --outline-variant: #56432f;
+  --inverse-surface: #f0e0d2;
+  --inverse-on-surface: #382f26;
+  --inverse-primary: #885200;
+  --warn-container: #5a4600; --on-warn-container: #ffe9a8;
+}
+
+/* Logo: das App-Icon ersetzt das Schild-Symbol */
+.boot-logo, .brand-logo, .brand-mini { background: none !important; box-shadow: none; overflow: hidden; animation-duration: 1.8s; }
+.boot-logo img, .brand-logo img, .brand-mini img { width: 100%; height: 100%; display: block; }

@@ -253,6 +253,19 @@ def cmd_doctor(a: argparse.Namespace) -> None:
     for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "static/admin.html", "static/css/admin.css",
                 "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js"):
         print(f"  {'✓' if (BASE / rel).exists() else '✗'} {rel}")
+    print("\nClient/Datenbank (Patch-Stand):")
+    def has(rel: str, needle: str) -> bool:
+        p = BASE / rel
+        return p.exists() and needle in p.read_text("utf-8", "replace")
+    for desc, rel, needle, patch in (
+            ("Verbindungs-Banner in app.js", "static/js/app.js", "initConn(", "patch_vela.py"),
+            ("Banner-Stile in app.css", "static/css/app.css", ".conn-banner", "patch_vela.py"),
+            ("conn.js fragt /api/maintenance ab", "static/js/conn.js", "api('/maintenance')", "conn.js neu kopieren"),
+            ("Datenbank: last_seen/blocked", "app/db.py", "last_seen", "patch_vela.py"),
+            ("Push + Changelog in app.js", "static/js/app.js", "initNotify(", "patch_vela2.py"),
+            ("Entschlüsselungs-Cache in app.js", "static/js/app.js", "cacheGet(", "patch_vela3.py"),
+            ("Farbschema in index.html", "static/index.html", "theme.css", "patch_vela3.py")):
+        print(f"  {'✓' if has(rel, needle) else '✗'} {desc}" + ("" if has(rel, needle) else f"   -> {patch}"))
     m = maintenance.get()
     print(f"\nWartungsmodus:     {'AN – ' + m['message'] if m['on'] else 'aus'}")
     admins = ops.list_users(admins=True)
