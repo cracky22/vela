@@ -264,7 +264,8 @@ def cmd_doctor(a: argparse.Namespace) -> None:
             ("Datenbank: last_seen/blocked", "app/db.py", "last_seen", "patch_vela.py"),
             ("Push + Changelog in app.js", "static/js/app.js", "initNotify(", "patch_vela2.py"),
             ("Entschlüsselungs-Cache in app.js", "static/js/app.js", "cacheGet(", "patch_vela3.py"),
-            ("Farbschema in index.html", "static/index.html", "theme.css", "patch_vela3.py")):
+            ("Farbschema in index.html", "static/index.html", "theme.css", "patch_vela3.py"),
+            ("Schlüsseltresor + QR-Anmeldung", "static/js/auth.js", "vaultLogin(", "patch_vela4.py")):
         print(f"  {'✓' if has(rel, needle) else '✗'} {desc}" + ("" if has(rel, needle) else f"   -> {patch}"))
     m = maintenance.get()
     print(f"\nWartungsmodus:     {'AN – ' + m['message'] if m['on'] else 'aus'}")
