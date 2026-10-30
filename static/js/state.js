@@ -1,6 +1,7 @@
 // Gemeinsamer Anwendungszustand.
 import * as store from './store.js';
 import { importIdentity } from './crypto.js';
+import { stashIdentity } from './keystash.js';
 
 export const S = {
   me: null,            // Antwort von /api/me
@@ -30,6 +31,7 @@ export async function saveIdentity(userId, identity, keyVersion) {
   const imported = await importIdentity(identity);
   const rec = { ...imported, keyVersion };
   await store.put('identity', userId, rec);
+  await stashIdentity(userId, identity, keyVersion).catch(() => {});   // für QR-Weitergabe/Tresor
   // Klartext-Schlüsselmaterial aus dem Speicher entfernen (soweit JavaScript das zulässt)
   identity.encPriv = identity.sigPriv = identity.encJwk = identity.sigJwk = null;
   S.keys = rec;

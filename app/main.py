@@ -233,7 +233,7 @@ class SecurityMiddleware:
                 h["X-Frame-Options"] = "DENY"
                 h["Cross-Origin-Opener-Policy"] = "same-origin"
                 h["Cross-Origin-Resource-Policy"] = "same-origin"
-                h["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)"
+                h["Permissions-Policy"] = "camera=(self), geolocation=(), payment=(), usb=(), microphone=(self)"
                 if config.TLS_ENABLED or headers.get("x-forwarded-proto") == "https":
                     h["Strict-Transport-Security"] = "max-age=31536000"
                 if path.startswith("/api/avatars/"):
@@ -594,6 +594,7 @@ def recover(body: RecoverIn, request: Request, response: Response):
         c.execute("UPDATE users SET pw_hash=?, totp_secret=?, totp_enabled=0, totp_last_step=0 WHERE id=?",
                   (pw_hash, secret, u["id"]))
         c.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))  # alle Geräte abmelden
+        c.execute("UPDATE users SET vault_kdf=NULL, vault_blob=NULL, vault_auth=NULL, vault_at=NULL WHERE id=?", (u["id"],))  # Tresor ungültig (neues Passwort)
     manager.close_user_from_thread(u["id"])
     issue_session(response, u["id"], full=False)
     return {"user_id": u["id"], "totp": totp_payload(secret, u["username"]),
@@ -635,6 +636,7 @@ def rotate_keys(body: RotateIn, sess: Full):
                   "key_version=key_version+1, totp_last_step=? WHERE id=?",
                   (body.enc_pub, body.sig_pub, body.key_bits, body.key_backup,
                    security.recovery_hash(body.recovery_auth), step, sess["user_id"]))
+        c.execute("UPDATE users SET vault_kdf=NULL, vault_blob=NULL, vault_auth=NULL, vault_at=NULL WHERE id=?", (sess["user_id"],))  # Tresor ungültig (neue Schlüssel)
     for r in db.all_("SELECT contact_id FROM contacts WHERE user_id=?", sess["user_id"]):
         manager.notify(r["contact_id"], {"type": "contact_update"})
     return {"key_version": u["key_version"] + 1}
@@ -876,6 +878,7 @@ def send_message(body: SendIn, sess: Full):
     row = db.one("SELECT * FROM messages WHERE id=?", body.id)
     manager.notify(body.to, {"type": "message", "message": msg_out(row, body.to)})
     manager.notify(me_, {"type": "message", "message": msg_out(row, me_)})  # andere eigene Geräte
+    push.notify_dm(me_, body.to, body.silent)
     return msg_out(row, me_)
 
 
@@ -1527,6 +1530,7 @@ def send_group_message(gid: str, body: GroupSendIn, sess: Full):
         raise HTTPException(409, "Nachrichten-ID bereits vergeben")
     out = gmsg_out(db.one("SELECT * FROM group_messages WHERE id=?", body.id))
     notify_group(gid, {"type": "message", "message": out})
+    push.notify_group_msg(gid, me_, body.silent)
     return out
 
 
@@ -1742,6 +1746,19 @@ admin_web.init(app, {
     "COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate, "client_ip": client_ip,
     "manager": manager, "leave_group": leave_group, "notify_group": notify_group,
 })
+
+
+# ---- Schlüsseltresor und QR-Anmeldung (/api/vault/*, /api/link/*) – vor der SPA-Catch-all-Route
+from . import vault  # noqa: E402
+
+vault.init(app, {"COOKIE": COOKIE, "lookup_session": lookup_session, "issue_session": issue_session,
+                 "rate": rate, "client_ip": client_ip})
+
+
+# ---- Web-Push (Benachrichtigungen bei geschlossener App) und /sw.js – vor der SPA-Catch-all-Route
+from . import push  # noqa: E402
+
+push.init(app, {"COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate})
 
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])

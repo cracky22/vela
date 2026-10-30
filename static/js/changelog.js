@@ -8,7 +8,7 @@ export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
 const KEY = 'vela:last-version';
 export const CHANGELOG = [
   {
-    version: version, date: '2026-10-27',
+    version: version, date: '2026-10-30',
     items: [
       { icon: 'bell', title: 'Benachrichtigungen auch auf Android (Web-App)',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },

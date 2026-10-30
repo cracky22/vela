@@ -9,6 +9,8 @@ import {
 import { S, saveIdentity } from './state.js';
 import { isWebKit } from './keycompat.js';
 import { version } from './app.js';
+import { vaultLogin, unlockFromVault, vaultUnlockSlot } from './vault.js';
+import { renderQrLogin } from './qrlink.js';
 
 let root, onAuthenticated;
 export function initAuth(rootEl, cb) { root = rootEl; onAuthenticated = cb; }
@@ -60,7 +62,8 @@ export function renderLogin(notice) {
       err.set('');
       submit.disabled = true;
       try {
-        const res = await api('/auth/login', { method: 'POST', body: { username: u.input.value.trim(), password: p.input.value, code: c.input.value.replace(/\s/g, '') } });
+        const login = { username: u.input.value.trim(), password: p.input.value, code: c.input.value.replace(/\s/g, '') };
+        const res = (await vaultLogin(login.username, login.password, login.code)) || await api('/auth/login', { method: 'POST', body: login });
         if (res.setup_2fa) render2FA(res.setup_2fa, onAuthenticated, { intro: 'Die Einrichtung der Zwei-Faktor-Authentifizierung wurde noch nicht abgeschlossen.' });
         else await onAuthenticated();
       } catch (ex) {
@@ -72,6 +75,7 @@ export function renderLogin(notice) {
   page(brand(), notice ? h('div', { class: 'banner info' }, icon('shield', 20), h('span', {}, notice)) : null,
     h('h1', { class: 'auth-title' }, 'Anmelden'), form,
     h('div', { class: 'auth-links' },
+      button('Mit QR-Code anmelden', { kind: 'tonal', icon: 'camera', cls: 'wide', onClick: () => renderQrLogin({ page, brand, onDone: onAuthenticated, back: () => renderLogin() }) }),
       button('Neues Konto erstellen', { kind: 'tonal', onClick: () => renderRegister(), cls: 'wide' }),
       button('Passwort oder 2FA-Gerät verloren?', { kind: 'text', onClick: () => renderRecover() })));
 }
@@ -237,6 +241,7 @@ export function renderRecover() {
 
 // ================================================================= Schlüssel auf neuem Gerät entsperren
 export function renderRestore({ onLogout }) {
+  unlockFromVault(S.me).then((ok) => ok && onAuthenticated()).catch(() => {});   // nach Tresor-Anmeldung ohne Eingabe
   const rk = h('textarea', { class: 'rk-input', rows: 3, placeholder: 'XXXX-XXXX-XXXX-…', autocomplete: 'off', autocapitalize: 'characters', spellcheck: false, required: true, 'aria-label': 'Wiederherstellungsschlüssel' });
   const err = errorBox();
   const submit = button('Schlüssel entsperren', { type: 'submit', cls: 'wide' });
@@ -258,6 +263,7 @@ export function renderRestore({ onLogout }) {
       },
     }, rk, err.el, submit),
     h('div', { class: 'auth-links' },
+      vaultUnlockSlot({ page, brand, onDone: onAuthenticated, onLogout }),
       button('Schlüssel verloren? Neue Schlüssel erzeugen', { kind: 'text', onClick: () => startRotate({ fromRestore: true }) }),
       button('Abmelden', { kind: 'text', onClick: onLogout })));
 }

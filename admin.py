@@ -250,8 +250,11 @@ def cmd_doctor(a: argparse.Namespace) -> None:
                          ("Zuletzt-gesehen (touch_last_seen)", "touch_last_seen")):
         print(f"  {'✓' if needle in text else '✗'} {desc}")
     print("\nDateien:")
-    for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "static/admin.html", "static/css/admin.css",
-                "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js"):
+    for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "app/push.py", "app/clientcache.py", "app/vault.py",
+                "static/admin.html", "static/sw.js", "static/badge-96.png", "static/icon.svg", "static/css/admin.css", "static/css/theme.css",
+                "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js", "static/js/notify.js", "static/js/changelog.js",
+                "static/js/cache.js", "static/js/vault.js", "static/js/keystash.js", "static/js/qrlink.js", "static/js/devices.js",
+                "static/js/vendor/argon2.umd.min.js", "static/js/vendor/jsQR.js"):
         print(f"  {'✓' if (BASE / rel).exists() else '✗'} {rel}")
     print("\nClient/Datenbank (Patch-Stand):")
     def has(rel: str, needle: str) -> bool:
