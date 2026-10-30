@@ -152,6 +152,10 @@ MIGRATIONS = [
     # Version 1.3
     ("users", "blocked", "INTEGER NOT NULL DEFAULT 0"),
     ("users", "last_seen", "INTEGER"),
+    ("users", "vault_kdf", "TEXT"),
+    ("users", "vault_blob", "TEXT"),
+    ("users", "vault_auth", "TEXT"),
+    ("users", "vault_at", "INTEGER"),
 ]
 
 

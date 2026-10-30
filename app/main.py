@@ -594,6 +594,7 @@ def recover(body: RecoverIn, request: Request, response: Response):
         c.execute("UPDATE users SET pw_hash=?, totp_secret=?, totp_enabled=0, totp_last_step=0 WHERE id=?",
                   (pw_hash, secret, u["id"]))
         c.execute("DELETE FROM sessions WHERE user_id=?", (u["id"],))  # alle Geräte abmelden
+        c.execute("UPDATE users SET vault_kdf=NULL, vault_blob=NULL, vault_auth=NULL, vault_at=NULL WHERE id=?", (u["id"],))  # Tresor ungültig (neues Passwort)
     manager.close_user_from_thread(u["id"])
     issue_session(response, u["id"], full=False)
     return {"user_id": u["id"], "totp": totp_payload(secret, u["username"]),
@@ -635,6 +636,7 @@ def rotate_keys(body: RotateIn, sess: Full):
                   "key_version=key_version+1, totp_last_step=? WHERE id=?",
                   (body.enc_pub, body.sig_pub, body.key_bits, body.key_backup,
                    security.recovery_hash(body.recovery_auth), step, sess["user_id"]))
+        c.execute("UPDATE users SET vault_kdf=NULL, vault_blob=NULL, vault_auth=NULL, vault_at=NULL WHERE id=?", (sess["user_id"],))  # Tresor ungültig (neue Schlüssel)
     for r in db.all_("SELECT contact_id FROM contacts WHERE user_id=?", sess["user_id"]):
         manager.notify(r["contact_id"], {"type": "contact_update"})
     return {"key_version": u["key_version"] + 1}
@@ -1742,6 +1744,13 @@ admin_web.init(app, {
     "COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate, "client_ip": client_ip,
     "manager": manager, "leave_group": leave_group, "notify_group": notify_group,
 })
+
+
+# ---- Schlüsseltresor und QR-Anmeldung (/api/vault/*, /api/link/*) – vor der SPA-Catch-all-Route
+from . import vault  # noqa: E402
+
+vault.init(app, {"COOKIE": COOKIE, "lookup_session": lookup_session, "issue_session": issue_session,
+                 "rate": rate, "client_ip": client_ip})
 
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])
