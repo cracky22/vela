@@ -7,6 +7,7 @@ import * as store from './store.js';
 import { S } from './state.js';
 import { dialog, snackbar, menu, progress, field, switchRow, button } from './ui.js';
 import { startRotate } from './auth.js';
+import { renderDeviceSection } from './devices.js';
 import { MODELS, transcriptionStatus, installModel, waitForInstall } from './transcribe.js';
 import { version } from './app.js';
 
@@ -96,6 +97,7 @@ export async function renderProfileView(root) {
     Object.entries(opts).map(([k, l]) => h('option', { value: k, selected: k === value }, l)));
 
   const tSlot = h('div', { class: 'transcription-slot' });
+  const devSlot = h('div', { class: 'device-slot' });
 
   clear(root,
     h('header', { class: 'top-bar' }, h('div', { class: 'app-title' }, 'Profil')),
@@ -129,6 +131,7 @@ export async function renderProfileView(root) {
           }
           S.prefs.notifications = v; store.setPref('notifications', v);
         } })),
+      section('Anmeldung auf anderen Geräten', 'key', devSlot),
       section('Darstellung', 'palette', themeSeg),
       section('Daten & Konto', 'person',
         h('p', { class: 'small muted' }, `Verschlüsselte Nachrichten und Dateien werden spätestens nach ${S.config.retention_days} Tagen vom Server gelöscht, Status nach 24 Stunden, Einmalansichten sofort nach dem Öffnen.`),
@@ -137,6 +140,7 @@ export async function renderProfileView(root) {
         button('Konto löschen …', { kind: 'text', icon: 'delete', cls: 'danger', onClick: deleteAccountDialog })),
       h('pre', { class: 'small muted center' }, 'com.crackyOS.vela · ' + version + ' · © 2026 Martin B.')));
   renderTranscription(tSlot);
+  renderDeviceSection(devSlot);
 }
 
 async function saveServerSettings(patch) {

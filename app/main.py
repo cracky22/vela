@@ -878,6 +878,7 @@ def send_message(body: SendIn, sess: Full):
     row = db.one("SELECT * FROM messages WHERE id=?", body.id)
     manager.notify(body.to, {"type": "message", "message": msg_out(row, body.to)})
     manager.notify(me_, {"type": "message", "message": msg_out(row, me_)})  # andere eigene Geräte
+    push.notify_dm(me_, body.to, body.silent)
     return msg_out(row, me_)
 
 
@@ -1529,6 +1530,7 @@ def send_group_message(gid: str, body: GroupSendIn, sess: Full):
         raise HTTPException(409, "Nachrichten-ID bereits vergeben")
     out = gmsg_out(db.one("SELECT * FROM group_messages WHERE id=?", body.id))
     notify_group(gid, {"type": "message", "message": out})
+    push.notify_group_msg(gid, me_, body.silent)
     return out
 
 
@@ -1751,6 +1753,12 @@ from . import vault  # noqa: E402
 
 vault.init(app, {"COOKIE": COOKIE, "lookup_session": lookup_session, "issue_session": issue_session,
                  "rate": rate, "client_ip": client_ip})
+
+
+# ---- Web-Push (Benachrichtigungen bei geschlossener App) und /sw.js – vor der SPA-Catch-all-Route
+from . import push  # noqa: E402
+
+push.init(app, {"COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate})
 
 
 @app.api_route("/{path:path}", methods=["GET", "HEAD"])

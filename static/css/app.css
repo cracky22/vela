@@ -857,3 +857,17 @@ button.quote { width: 100%; text-align: left; border-top: 0; border-right: 0; bo
 .device-block { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; padding: 6px 0 14px; }
 .device-block + .device-block { border-top: 1px solid var(--outline-variant); padding-top: 14px; }
 .vault-slot:empty { display: none; }
+
+/* Changelog „Was ist neu“ (changelog.js) und Versions-Link */
+.m3-dialog.changelog-dialog { max-width: min(560px, calc(100vw - 32px)); }
+.changelog { display: flex; flex-direction: column; gap: 22px; max-height: min(58vh, 520px); overflow-y: auto; padding-right: 2px; }
+.changelog-ver { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap; }
+.changelog-ver .badge-v { padding: 4px 12px; border-radius: var(--shape-full); background: var(--primary-container); color: var(--on-primary-container); font-weight: 600; font-size: 13px; }
+.changelog-ver .date { color: var(--on-surface-variant); font-size: 12px; }
+.changelog-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 16px; }
+.changelog-list li { display: flex; gap: 14px; align-items: flex-start; }
+.changelog-ic { flex: none; width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; background: var(--secondary-container); color: var(--on-secondary-container); }
+.changelog-list b { display: block; font-weight: 500; margin-bottom: 2px; }
+.changelog-list .txt { display: block; color: var(--on-surface-variant); font-size: 14px; line-height: 1.45; }
+.version-link { color: inherit; text-decoration: underline; text-underline-offset: 3px; }
+.version-link:hover, .version-link:focus-visible { color: var(--primary); }
