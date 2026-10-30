@@ -1,12 +1,11 @@
 // „Was gibt’s Neues?“ nach einem Update (Material-3-Dialog). Gemerkt wird die zuletzt gesehene Version im
 // localStorage. Neuer Eintrag nach einem Update: oben in CHANGELOG ergänzen und `version` in app.js erhöhen.
 import { h, icon } from './util.js';
+import { version } from './app.js';
 import { dialog } from './ui.js';
 
 export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
 const KEY = 'vela:last-version';
-import { version } from './app.js';
-// Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
     version: version, date: '2026-10-30',
