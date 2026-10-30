@@ -1,0 +1,2 @@
+hash-wasm (argon2.umd.min.js): MIT License, (c) Dani Biro, https://github.com/Daninet/hash-wasm
+jsQR (jsQR.js): Apache License 2.0, (c) Cosmo Wolfe, https://github.com/cozmo/jsQR
