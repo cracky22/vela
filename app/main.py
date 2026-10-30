@@ -233,7 +233,7 @@ class SecurityMiddleware:
                 h["X-Frame-Options"] = "DENY"
                 h["Cross-Origin-Opener-Policy"] = "same-origin"
                 h["Cross-Origin-Resource-Policy"] = "same-origin"
-                h["Permissions-Policy"] = "camera=(), geolocation=(), payment=(), usb=(), microphone=(self)"
+                h["Permissions-Policy"] = "camera=(self), geolocation=(), payment=(), usb=(), microphone=(self)"
                 if config.TLS_ENABLED or headers.get("x-forwarded-proto") == "https":
                     h["Strict-Transport-Security"] = "max-age=31536000"
                 if path.startswith("/api/avatars/"):
