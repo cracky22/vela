@@ -19,6 +19,8 @@ import { prepareImage, startRecording, canPlayAudio } from './media.js';
 import { transcribe } from './transcribe.js';
 import { initStatus, renderStatusView, loadStatuses, statusEvent, hasUnseenStatus } from './status.js';
 import { initProfile, renderProfileView } from './profile.js';
+import { initNotify, showLocal, disablePush } from './notify.js';
+import { maybeShowChangelog } from './changelog.js';
 import { initConn, setWsState } from './conn.js';
 import { initGroups, createGroupDialog, openGroupInfo, refreshGroupInfo, forwardDialog, ttlDialog, TTL_LABELS } from './groups.js';
 
@@ -190,6 +192,8 @@ async function enterApp() {
   loadAll();
   loadStatuses().then(refreshNav).catch(() => {});
   connectWS();
+  initNotify({ enabled: S.prefs.notifications, openChat: (id) => { if (S.contacts.has(id) || S.groups.has(id)) { switchView('chats'); openChat(id); } } });
+  maybeShowChangelog(version, S.me);
   applyCacheEpoch(S.me.cache_epoch, onCacheCleared);
   setTimeout(() => cachePrune(S.config.retention_days), 8000);
 }
@@ -2166,7 +2170,7 @@ function handleEvent(ev) {
         const visible = S.chat === convId && !document.hidden;
         if (!visible) c.unread = (c.unread || 0) + 1;
         if (document.hidden && S.prefs.notifications && window.Notification?.permission === 'granted' && !c.muted) {
-          try { new Notification('Vela', { body: c.kind === 'group' ? `Neue Nachricht in „${c.name}“` : `Neue Nachricht von ${c.username}`, tag: convId, icon: `${BASE_PATH}/static/icon-192.png` }); } catch { /* ok */ }
+          if (!S.pushActive) showLocal({ title: 'Vela', body: c.kind === 'group' ? `Neue Nachricht in „${c.name}“` : `Neue Nachricht von ${c.username}`, tag: convId });
         }
       }
       addMessage(m);
@@ -2226,6 +2230,7 @@ function sessionExpired() {
 }
 
 export async function logout(wipe) {
+  await disablePush().catch(() => {});
   try { await api('/auth/logout', { method: 'POST' }); } catch { /* trotzdem lokal abmelden */ }
   const ws = S.ws; S.ws = null; ws?.close(); setWsState('none');
   if (wipe) await store.wipe();
