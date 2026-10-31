@@ -49,7 +49,7 @@ S.changed = new Set(); // Nutzer, deren Schlüssel sich seit dem Anheften geänd
 S.names = new Map();   // Namen ausgetretener Mitglieder (aus Systemnachrichten)
 S.editing = null;
 
-export const version = 'v1.3.1';
+export const version = 'v1.3.2';
 export const isGroup = (id) => S.groups.has(id);
 export const conv = (id) => S.contacts.get(id) || S.groups.get(id);
 export const convOf = (m) => m.group || (m.from === S.me.id ? m.to : m.from);
