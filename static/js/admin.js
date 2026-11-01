@@ -1,8 +1,9 @@
-// Vela Admin (/admin): Nutzerverwaltung im laufenden Betrieb – dieselben Funktionen wie admin.py.
+// Vela Admin (/admin): Nutzer- und Gruppenverwaltung im laufenden Betrieb – dieselben Funktionen wie admin.py.
 // Alle Texte kommen per DOM-API (kein innerHTML) in die Seite; Schreibaktionen verlangen einen 2FA-Code.
 import { h, clear, icon, iconBtn, fmtBytes } from './util.js';
 import { api, ApiError, BASE_PATH } from './api.js';
 import { dialog, snackbar, field, button, confirm, switchRow } from './ui.js';
+import { createGroupsView } from './admin-groups.js';
 
 const root = document.getElementById('admin');
 const st = { me: null, users: [], sel: new Set(), q: '', state: 'all', days: 30, tab: 'users' };
@@ -12,6 +13,7 @@ const ACTION_LABEL = {
   'user.block': 'Gesperrt', 'user.unblock': 'Entsperrt', 'user.logout': 'Abgemeldet', 'user.delete': 'Gelöscht',
   'user.purge': 'Inhalte gelöscht', 'maintenance.on': 'Wartung an', 'maintenance.off': 'Wartung aus',
   'stepup.failed': '2FA fehlgeschlagen', 'cache.clear': 'Usercache geleert', 'admins.grant': 'Admin erteilt', 'admins.revoke': 'Admin entzogen',
+  'group.admin_grant': 'Gruppen-Admin ernannt', 'group.admin_revoke': 'Gruppen-Admin entzogen',
 };
 
 // ---------------------------------------------------------------- Helfer
@@ -171,7 +173,10 @@ async function detailDialog(id) {
         kv('Registriert', fmtDT(d.created_at)),
         kv('Letzte Anmeldung', `${fmtDT(d.last_login)} (${d.sessions} Sitzung${d.sessions === 1 ? '' : 'en'})`),
         kv('Schlüssel', `RSA-${d.key_bits} (Version ${d.key_version})`), kv('2FA', d.totp_enabled ? 'aktiv' : 'nein'),
-        kv('Kontakte / Gruppen', `${d.contacts} / ${d.groups}`), kv('Nachrichten', d.messages),
+        kv('Kontakte / Gruppen', `${d.contacts} / ${d.groups}`),
+        d.group_list?.length ? kv('Gruppen', h('div', { class: 'g-tags' }, d.group_list.map((g) => h('span', { class: `g-tag${g.role === 'admin' ? ' admin' : ''}`, title: g.role === 'admin' ? 'Gruppen-Admin' : 'Mitglied' },
+          g.role === 'admin' ? icon('admin', 13) : null, g.name)))) : null,
+        kv('Nachrichten', d.messages),
         kv('Dateien', `${d.files} (${fmtBytes(d.file_bytes)})`),
         kv('Gesendete Inhalte', h('div', {}, Object.keys(CAT_LABEL).map((k) => h('div', {}, `${c[k]} × ${CAT_LABEL[k]}`))))),
       d.is_admin ? h('p', { class: 'small muted' }, 'Admin-Konten können hier nicht gesperrt oder gelöscht werden.') : null),
@@ -230,13 +235,16 @@ function maintenanceDialog() {
 
 // ---------------------------------------------------------------- Ansicht
 const el = {};
+let groups = null;   // Gruppenansicht (admin-groups.js)
 
 function build() {
   el.head = h('div', { class: 'admin-head' });
   el.tabs = h('div', { class: 'admin-tabs' });
   el.users = h('div', {});
   el.audit = h('div', { hidden: true });
-  clear(root, h('div', { class: 'admin-wrap' }, el.head, el.tabs, el.users, el.audit));
+  groups = createGroupsView({ write, openUser: detailDialog });
+  el.groups = h('div', { hidden: true }, groups.el);
+  clear(root, h('div', { class: 'admin-wrap' }, el.head, el.tabs, el.users, el.groups, el.audit));
 
   const search = h('input', { type: 'search', placeholder: 'Suchen (Name, E-Mail, ID) …', 'aria-label': 'Suchen' });
   let t = 0;
@@ -261,8 +269,13 @@ function renderHead() {
     button('Usercache leeren …', { kind: 'tonal', icon: 'refresh', onClick: () => cacheDialog([]) }),
     h('a', { class: 'btn text', href: (BASE_PATH || '') + '/' }, 'Zur App'),
     h('span', { class: 'muted small' }, st.me.name));
-  clear(el.tabs, [['users', 'Nutzer'], ['audit', 'Protokoll']].map(([k, l]) => h('button', {
-    type: 'button', class: st.tab === k ? 'on' : '', onclick: () => { st.tab = k; el.users.hidden = k !== 'users'; el.audit.hidden = k !== 'audit'; renderHead(); if (k === 'audit') loadAudit(); },
+  clear(el.tabs, [['users', 'Nutzer'], ['groups', 'Gruppen'], ['audit', 'Protokoll']].map(([k, l]) => h('button', {
+    type: 'button', class: st.tab === k ? 'on' : '', 'aria-pressed': String(st.tab === k),
+    onclick: () => {
+      st.tab = k; el.users.hidden = k !== 'users'; el.groups.hidden = k !== 'groups'; el.audit.hidden = k !== 'audit'; renderHead();
+      if (k === 'audit') loadAudit();
+      if (k === 'groups') groups.load();
+    },
   }, l)));
 }
 
@@ -344,7 +357,11 @@ async function boot() {
   }
   build();
   await loadUsers();
-  setInterval(() => { if (st.tab === 'users' && !document.hidden && !document.querySelector('dialog[open]')) loadUsers(); }, 30000);
+  setInterval(() => {
+    if (document.hidden || document.querySelector('dialog[open]')) return;
+    if (st.tab === 'users') loadUsers();
+    else if (st.tab === 'groups') groups.refresh();
+  }, 30000);
 }
 
 boot();
