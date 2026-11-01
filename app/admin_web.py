@@ -16,6 +16,7 @@ Schutz:
 Gruppen: /api/admin/groups liefert alle Gruppen samt Mitgliedern und Rollen (nur Metadaten); Gruppen-Admins
 lassen sich mit /api/admin/groups/role ernennen bzw. entziehen (Step-up + Audit-Eintrag, Mitglieder erfahren es live).
 """
+
 import ipaddress
 import os
 import re
@@ -400,23 +401,43 @@ def init(app, deps: dict[str, Any]) -> None:
 @router.get("/stats")
 def server_stats(admin: Admin):
     load1, load5, load15 = os.getloadavg() if hasattr(os, "getloadavg") else (0.0, 0.0, 0.0)
-    cpu_percent = psutil.cpu_percent(interval=None)
-    vela_stats = {"active": False, "cpu_percent": 0.0, "memory_mb": 0.0}
+    system_mem = psutil.virtual_memory()
+    
+    vela_stats = {"active": True, "cpu_percent": 0.0, "memory_mb": 0.0}
     try:
-        for proc in psutil.process_iter(['name', 'cmdline', 'cpu_percent', 'memory_info']):
-            name = proc.info.get('name', '').lower()
-            cmdline = " ".join(proc.info.get('cmdline') or [])
-            if 'vela' in name or 'vela' in cmdline:
-                vela_stats['active'] = True
-                vela_stats['cpu_percent'] += proc.info.get('cpu_percent', 0.0)
-                mem = proc.info.get('memory_info')
-                if mem:
-                    vela_stats['memory_mb'] += mem.rss / (1024 * 1024)
+        current_proc = psutil.Process(os.getpid())
+        procs = [current_proc] + current_proc.children(recursive=True)
+        total_rss = sum(p.memory_info().rss for p in procs if p.is_running())
+        total_cpu = sum(p.cpu_percent(interval=None) for p in procs if p.is_running())
+        vela_stats["cpu_percent"] = round(total_cpu, 2)
+        vela_stats["memory_mb"] = round(total_rss / (1024 * 1024), 2)
     except Exception:
         pass
-        
+
+    # Media storage breakdown
+    media_stats = {"text_bytes": 0, "image_bytes": 0, "audio_bytes": 0, "other_bytes": 0}
+    storage_dir = os.environ.get("VELA_STORAGE_DIR", os.path.join(os.path.dirname(__file__), "..", "data", "media"))
+    if os.path.exists(storage_dir):
+        for root, _, files in os.walk(storage_dir):
+            for file in files:
+                ext = file.split('.')[-1].lower() if '.' in file else ''
+                try:
+                    size = os.path.getsize(os.path.join(root, file))
+                except Exception:
+                    size = 0
+                if ext in ['txt', 'md', 'json', 'pdf', 'doc', 'docx']:
+                    media_stats["text_bytes"] += size
+                elif ext in ['jpg', 'jpeg', 'png', 'gif', 'webp', 'svg']:
+                    media_stats["image_bytes"] += size
+                elif ext in ['mp3', 'wav', 'ogg', 'm4a', 'flac', 'opus']:
+                    media_stats["audio_bytes"] += size
+                else:
+                    media_stats["other_bytes"] += size
+
     return {
         "load_avg": [load1, load5, load15],
-        "cpu_percent": cpu_percent,
-        "vela": vela_stats
+        "cpu_percent": psutil.cpu_percent(interval=None),
+        "system_memory_percent": system_mem.percent,
+        "vela": vela_stats,
+        "media_breakdown": media_stats
     }
