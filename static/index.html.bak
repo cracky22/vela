@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="de">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#fff8f4">
+  <meta name="description" content="Vela - Ende-zu-Ende verschlüsselter Messenger">
+  <meta name="referrer" content="no-referrer">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <title>Vela</title>
+  <script>
+    window.__VELA_BASE_PATH__ = window.location.pathname.startsWith('/vela') ? '/vela' : '';
+  </script>
+  <link rel="icon" href="static/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="static/icon-192.png">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="stylesheet" href="static/css/app.css">
+  <link rel="stylesheet" href="static/css/theme.css">
+  <script type="module" src="static/js/app.js"></script>
+</head>
+<body>
+  <div id="app">
+    <div class="boot" role="status" aria-label="Vela wird geladen">
+      <div class="boot-logo"><img src="static/icon.svg" alt="" width="72" height="72"></div>
+      <div class="progress indeterminate thin"><div class="track"><div class="bar"></div></div></div>
+    </div>
+  </div>
+  <noscript>Vela benötigt JavaScript, weil die Verschlüsselung auf deinem Gerät stattfindet.</noscript>
+</body>
+</html>
