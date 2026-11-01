@@ -242,9 +242,11 @@ function build() {
   el.tabs = h('div', { class: 'admin-tabs' });
   el.users = h('div', {});
   el.audit = h('div', { hidden: true });
+  el.stats = h('div', { hidden: true });
   groups = createGroupsView({ write, openUser: detailDialog });
   el.groups = h('div', { hidden: true }, groups.el);
-  clear(root, h('div', { class: 'admin-wrap' }, el.head, el.tabs, el.users, el.groups, el.audit));
+  clear(root, h('div', { class: 'admin-wrap' }, el.head, el.tabs, el.users, el.groups, el.stats, el.audit));
+  initStatsView();
 
   const search = h('input', { type: 'search', placeholder: 'Suchen (Name, E-Mail, ID) …', 'aria-label': 'Suchen' });
   let t = 0;
@@ -269,12 +271,19 @@ function renderHead() {
     button('Usercache leeren …', { kind: 'tonal', icon: 'refresh', onClick: () => cacheDialog([]) }),
     h('a', { class: 'btn text', href: (BASE_PATH || '') + '/' }, 'Zur App'),
     h('span', { class: 'muted small' }, st.me.name));
-  clear(el.tabs, [['users', 'Nutzer'], ['groups', 'Gruppen'], ['audit', 'Protokoll']].map(([k, l]) => h('button', {
+  clear(el.tabs, [['users', 'Nutzer'], ['groups', 'Gruppen'], ['stats', 'Server & Auslastung'], ['audit', 'Protokoll']].map(([k, l]) => h('button', {
     type: 'button', class: st.tab === k ? 'on' : '', 'aria-pressed': String(st.tab === k),
     onclick: () => {
-      st.tab = k; el.users.hidden = k !== 'users'; el.groups.hidden = k !== 'groups'; el.audit.hidden = k !== 'audit'; renderHead();
-      if (k === 'audit') loadAudit();
-      if (k === 'groups') groups.load();
+      st.tab = k;
+      el.users.hidden = k !== 'users';
+      el.groups.hidden = k !== 'groups';
+      el.stats.hidden = k !== 'stats';
+      el.audit.hidden = k !== 'audit';
+      renderHead();
+      if (k === 'audit') { stopStatsPolling(); loadAudit(); }
+      else if (k === 'groups') { stopStatsPolling(); groups.load(); }
+      else if (k === 'stats') { startStatsPolling(); }
+      else { stopStatsPolling(); }
     },
   }, l)));
 }
@@ -365,3 +374,134 @@ async function boot() {
 }
 
 boot();
+
+// ---------------------------------------------------------------- Server & Auslastung
+let statsInterval = null;
+const cpuHistory = new Array(30).fill(0);
+
+function initStatsView() {
+  clear(el.stats,
+    h('div', { style: 'padding: 16px 0;' },
+      h('h2', { style: 'margin-bottom: 16px;' }, 'Server-Auslastung & Live CPU'),
+      h('div', { class: 'stats-grid', style: 'display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px;' },
+        h('div', { class: 'stat-card', style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px;' },
+          h('span', { class: 'muted small' }, 'Load Average (1 Min)'),
+          h('div', { id: 'stat-load1', style: 'font-size: 1.5rem; font-weight: bold; margin-top: 4px;' }, '–')
+        ),
+        h('div', { class: 'stat-card', style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px;' },
+          h('span', { class: 'muted small' }, 'Load Average (5 Min)'),
+          h('div', { id: 'stat-load5', style: 'font-size: 1.5rem; font-weight: bold; margin-top: 4px;' }, '–')
+        ),
+        h('div', { class: 'stat-card', style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px;' },
+          h('span', { class: 'muted small' }, 'Load Average (15 Min)'),
+          h('div', { id: 'stat-load15', style: 'font-size: 1.5rem; font-weight: bold; margin-top: 4px;' }, '–')
+        ),
+        h('div', { class: 'stat-card', style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px;' },
+          h('span', { class: 'muted small' }, 'Gesamt CPU Auslastung'),
+          h('div', { id: 'stat-cpu-cur', style: 'font-size: 1.5rem; font-weight: bold; margin-top: 4px;' }, '– %')
+        )
+      ),
+      h('div', { style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px; margin-bottom: 24px;' },
+        h('h3', { style: 'margin-bottom: 12px; font-size: 1.1rem;' }, 'Ressourcen: systemctl status vela'),
+        h('div', { style: 'display: flex; gap: 24px; flex-wrap: wrap;' },
+          h('p', { id: 'vela-status' }, 'Status: Laden...'),
+          h('p', { id: 'vela-cpu' }, 'CPU-Auslastung: – %'),
+          h('p', { id: 'vela-mem' }, 'Arbeitsspeicher (RAM): – MB')
+        )
+      ),
+      h('div', { style: 'background: var(--bg-surface-card, rgba(255,255,255,0.05)); padding: 16px; border-radius: 8px;' },
+        h('h3', { style: 'margin-bottom: 12px; font-size: 1.1rem;' }, 'Live CPU Auslastungsverlauf (letzte 60 Sek.)'),
+        h('canvas', { id: 'cpu-canvas', width: 700, height: 220, style: 'width: 100%; height: 220px; background: rgba(0,0,0,0.2); border-radius: 6px; display: block;' })
+      )
+    )
+  );
+}
+
+async function updateStatsData() {
+  if (st.tab !== 'stats') return;
+  try {
+    const data = await api('/admin/stats');
+    const load1 = document.getElementById('stat-load1');
+    const load5 = document.getElementById('stat-load5');
+    const load15 = document.getElementById('stat-load15');
+    const cpuCur = document.getElementById('stat-cpu-cur');
+    const vStatus = document.getElementById('vela-status');
+    const vCpu = document.getElementById('vela-cpu');
+    const vMem = document.getElementById('vela-mem');
+
+    if (load1) load1.textContent = data.load_avg[0].toFixed(2);
+    if (load5) load5.textContent = data.load_avg[1].toFixed(2);
+    if (load15) load15.textContent = data.load_avg[2].toFixed(2);
+    if (cpuCur) cpuCur.textContent = data.cpu_percent.toFixed(1) + ' %';
+
+    if (vStatus) vStatus.textContent = `Status: ${data.vela.active ? 'Aktiv / Läuft' : 'Inaktiv'}`;
+    if (vCpu) vCpu.textContent = `CPU-Auslastung: ${data.vela.cpu_percent.toFixed(1)} %`;
+    if (vMem) vMem.textContent = `Arbeitsspeicher (RAM): ${data.vela.memory_mb.toFixed(1)} MB`;
+
+    cpuHistory.push(data.cpu_percent);
+    cpuHistory.shift();
+    drawCpuGraph();
+  } catch (err) {
+    console.error('Fehler beim Abrufen der Serverstatistiken:', err);
+  }
+}
+
+function drawCpuGraph() {
+  const canvas = document.getElementById('cpu-canvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width;
+  const h = canvas.height;
+
+  ctx.clearRect(0, 0, w, h);
+
+  // Raster zeichnen (0%, 25%, 50%, 75%, 100%)
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
+  ctx.lineWidth = 1;
+  ctx.setFont = '10px sans-serif';
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+
+  for (let i = 0; i <= 4; i++) {
+    const y = (h / 4) * i;
+    const val = 100 - i * 25;
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(w, y);
+    ctx.stroke();
+    ctx.fillText(val + '%', 8, Math.min(y + 12, h - 4));
+  }
+
+  // Verlauf zeichnen
+  const step = w / (cpuHistory.length - 1);
+  ctx.beginPath();
+  for (let i = 0; i < cpuHistory.length; i++) {
+    const x = i * step;
+    const val = Math.max(0, Math.min(100, cpuHistory[i]));
+    const y = h - (val / 100) * (h - 10);
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+
+  ctx.strokeStyle = '#6366f1';
+  ctx.lineWidth = 2.5;
+  ctx.stroke();
+
+  // Fläche unter der Kurve füllen
+  ctx.lineTo(w, h);
+  ctx.lineTo(0, h);
+  ctx.closePath();
+  ctx.fillStyle = 'rgba(99, 102, 241, 0.15)';
+  ctx.fill();
+}
+
+function startStatsPolling() {
+  updateStatsData();
+  if (!statsInterval) statsInterval = setInterval(updateStatsData, 2000);
+}
+
+function stopStatsPolling() {
+  if (statsInterval) {
+    clearInterval(statsInterval);
+    statsInterval = null;
+  }
+}
