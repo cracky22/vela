@@ -10,7 +10,7 @@ import { startRotate } from './auth.js';
 import { enablePush, disablePush } from './notify.js';
 import { renderDeviceSection } from './devices.js';
 import { MODELS, transcriptionStatus, installModel, waitForInstall } from './transcribe.js';
-import { version } from './app.js';
+import { version } from './version.js';
 
 let ctx = null;
 let container = null;

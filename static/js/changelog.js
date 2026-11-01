@@ -5,7 +5,7 @@ import { dialog } from './ui.js';
 
 export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
 const KEY = 'vela:last-version';
-import { version } from './app.js';
+import { version } from './version.js';
 // Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
