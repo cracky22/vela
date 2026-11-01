@@ -13,7 +13,7 @@ export const CHANGELOG = [
     items: [
       { icon: 'bell', title: 'Benachrichtigungen auch auf Android (Web-App)',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },
-      { icon: 'warn', title: 'QR-Anmeldung',
+      { icon: 'camera', title: 'QR-Anmeldung',
         text: 'Neue QR-Anmeldung. Einfacher Zugang ohne Passwort.' },
       { icon: 'info', title: 'Neues Design',
         text: 'Es kommen nochmal Updates was Darstellung angeht, aber es wird in diesem Theming bleiben circa.' },
