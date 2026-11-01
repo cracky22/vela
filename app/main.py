@@ -1744,7 +1744,7 @@ from . import admin_web  # noqa: E402
 
 admin_web.init(app, {
     "COOKIE": COOKIE, "lookup_session": lookup_session, "rate": rate, "client_ip": client_ip,
-    "manager": manager, "leave_group": leave_group, "notify_group": notify_group,
+    "manager": manager, "leave_group": leave_group, "notify_group": notify_group, "emit": emit,
 })
 
 

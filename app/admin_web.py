@@ -9,6 +9,9 @@ Schutz:
 * Schreibaktionen verlangen zusätzlich einen frischen 2FA-Code (5 Minuten gültig, "Step-up")
 * optional Netz-Beschränkung: VELA_ADMIN_NETS="192.168.0.0/16,10.0.0.0/8"
 * jede Aktion landet im hash-verketteten Audit-Log
+
+Gruppen: /api/admin/groups liefert alle Gruppen samt Mitgliedern und Rollen (nur Metadaten); Gruppen-Admins
+lassen sich mit /api/admin/groups/role ernennen bzw. entziehen (Step-up + Audit-Eintrag, Mitglieder erfahren es live).
 """
 from __future__ import annotations
 
@@ -89,6 +92,12 @@ class PurgeIn(IdsIn):
     min_mb: float | None = Field(default=None, ge=0, le=100000)
     max_mb: float | None = Field(default=None, ge=0, le=100000)
     dry_run: bool = True
+
+
+class GroupRoleIn(BaseModel):
+    group_id: str = Field(max_length=32)
+    user_id: str = Field(max_length=32)
+    admin: bool
 
 
 class MaintIn(BaseModel):
@@ -291,6 +300,41 @@ def purge(body: PurgeIn, admin: Stepped):
     return {"results": _run(body.ids, admin, one, guard=False)}
 
 
+@router.get("/groups")
+def groups(admin: Admin, q: str = ""):
+    """Gruppen mit Mitgliedern (id, Name, Rolle, Status) – Grundlage für Karten, Netzwerk und Matrix."""
+    m = D["manager"]
+    out = ops.list_groups(q.strip()[:80] or None, limit=500)
+    online: dict[str, bool] = {}
+    for g in out:
+        for mem in g["members"]:
+            if mem["id"] not in online:
+                online[mem["id"]] = m.is_online(mem["id"])
+            mem["online"] = online[mem["id"]]
+    return {"groups": out}
+
+
+@router.post("/groups/role")
+def group_role(body: GroupRoleIn, admin: Stepped):
+    """Gruppen-Admin ernennen (admin=true) oder Admin-Recht entziehen (admin=false)."""
+    gid, uid = body.group_id.lower(), body.user_id.lower()
+    if not (HEX32.match(gid) and HEX32.match(uid)):
+        raise HTTPException(404, "Gruppe oder Nutzer nicht gefunden")
+    try:
+        r = ops.set_group_role(gid, uid, body.admin)
+    except LookupError as e:
+        raise HTTPException(404, str(e))
+    except ValueError as e:
+        raise HTTPException(400, str(e))
+    if r["changed"]:
+        if r["mid"] and D.get("emit"):                       # (ältere main.py ohne "emit": Anzeige erst nach Neuladen)
+            D["emit"](gid, [r["mid"]])                       # Systemnachricht live in den Gruppenchat
+        D["notify_group"](gid, {"type": "group_update", "group": gid})
+        ops.audit(admin["id"], admin["name"], "group.admin_grant" if body.admin else "group.admin_revoke",
+                  f"{r['group']} ({gid[:8]})", f"{r['username']} ({uid[:8]})", admin["ip"])
+    return {"ok": True, "changed": r["changed"], "username": r["username"], "group": r["group"], "admin": body.admin}
+
+
 @router.get("/maintenance")
 def get_maintenance(admin: Admin):
     return maintenance.get()
@@ -334,7 +378,7 @@ def get_audit(admin: Admin, limit: int = 100):
 # ------------------------------------------------------------------ Einbindung
 def init(app, deps: dict[str, Any]) -> None:
     """Von main.py aufgerufen (vor der SPA-Catch-all-Route). deps: COOKIE, lookup_session, rate,
-    client_ip, manager, leave_group, notify_group."""
+    client_ip, manager, leave_group, notify_group, emit."""
     D.update(deps)
     NETS.clear()
     for part in os.environ.get("VELA_ADMIN_NETS", "").split(","):

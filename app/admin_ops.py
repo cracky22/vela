@@ -119,6 +119,9 @@ def user_info(uid: str) -> dict | None:
         "sessions": sess["n"], "last_login": sess["t"],
         "contacts": db.one("SELECT COUNT(*) FROM contacts WHERE user_id=?", uid)[0],
         "groups": db.one("SELECT COUNT(*) FROM group_members WHERE user_id=?", uid)[0],
+        "group_list": [{"id": r["id"], "name": r["name"], "role": r["role"]} for r in db.all_(
+            "SELECT g.id, g.name, m.role FROM group_members m JOIN groups g ON g.id=m.group_id "
+            "WHERE m.user_id=? ORDER BY g.name COLLATE NOCASE", uid)],
         "messages": db.one("SELECT COUNT(*) FROM messages WHERE sender_id=? OR recipient_id=?", uid, uid)[0],
         "files": files["n"], "file_bytes": files["s"],
         "content": sel["count"],
@@ -147,12 +150,74 @@ def set_admin(uid: str, flag: bool) -> None:
         c.execute("UPDATE users SET is_admin=? WHERE id=?", (1 if flag else 0, uid))
 
 
+# ------------------------------------------------------------------ Gruppen (Übersicht, Gruppen-Admins)
+def list_groups(search: str | None = None, limit: int = 500) -> list[dict]:
+    """Alle Gruppen mit Mitgliedern und Rollen (nur Metadaten – Inhalte sind Ende-zu-Ende-verschlüsselt).
+    Suche: Gruppenname, Beschreibung, ID oder Benutzername eines Mitglieds."""
+    where, args = "", []
+    if search:
+        like = f"%{search}%"
+        where = ("WHERE g.name LIKE ? OR g.description LIKE ? OR g.id LIKE ? OR g.id IN ("
+                 "SELECT m.group_id FROM group_members m JOIN users u ON u.id=m.user_id WHERE u.username LIKE ?)")
+        args = [like] * 4
+    groups = db.all_(f"SELECT g.* FROM groups g {where} ORDER BY g.name COLLATE NOCASE LIMIT ?", *args, limit)
+    if not groups:
+        return []
+    by_gid: dict[str, list[dict]] = {g["id"]: [] for g in groups}
+    ids = list(by_gid)
+    for i in range(0, len(ids), 400):          # SQLite-Variablenlimit umgehen
+        chunk = ids[i:i + 400]
+        rows = db.all_(
+            "SELECT m.group_id, m.user_id, m.role, m.joined_at, u.username, u.blocked, u.activated, u.is_admin, u.last_seen "
+            f"FROM group_members m JOIN users u ON u.id=m.user_id WHERE m.group_id IN ({','.join('?' * len(chunk))}) "
+            "ORDER BY m.role='admin' DESC, u.username COLLATE NOCASE", *chunk)
+        for r in rows:
+            by_gid[r["group_id"]].append({
+                "id": r["user_id"], "username": r["username"], "role": r["role"], "joined_at": r["joined_at"],
+                "state": "blocked" if r["blocked"] else ("active" if r["activated"] else "pending"),
+                "site_admin": bool(r["is_admin"]), "last_seen": r["last_seen"]})
+    cids = list({g["created_by"] for g in groups if g["created_by"]})
+    creators = {r["id"]: r["username"] for r in db.all_(
+        f"SELECT id, username FROM users WHERE id IN ({','.join('?' * len(cids))})", *cids)} if cids else {}
+    return [{
+        "id": g["id"], "name": g["name"], "description": g["description"], "created_at": g["created_at"],
+        "created_by": g["created_by"], "created_by_name": creators.get(g["created_by"]),
+        "ttl": g["ttl"], "only_admins": bool(g["only_admins"]), "members": by_gid[g["id"]],
+    } for g in groups]
+
+
+def set_group_role(gid: str, uid: str, admin: bool) -> dict:
+    """Macht ein Gruppenmitglied zum Gruppen-Admin bzw. entzieht das Recht (wie in der App, nur ohne eigene
+    Admin-Rolle in der Gruppe). Die Gruppe behält immer mindestens einen Admin.
+    Rückgabe: {"changed", "username", "group", "mid"}; mid = Systemnachricht (vom Server live zu verteilen)."""
+    g = db.one("SELECT id, name FROM groups WHERE id=?", gid)
+    if not g:
+        raise LookupError("Gruppe nicht gefunden")
+    with db.tx() as c:
+        m = c.execute("SELECT m.role, u.username FROM group_members m JOIN users u ON u.id=m.user_id "
+                      "WHERE m.group_id=? AND m.user_id=?", (gid, uid)).fetchone()
+        if not m:
+            raise LookupError("Nutzer ist kein Mitglied dieser Gruppe")
+        want = "admin" if admin else "member"
+        if m["role"] == want:
+            return {"changed": False, "username": m["username"], "group": g["name"], "mid": None}
+        if not admin and c.execute("SELECT COUNT(*) n FROM group_members WHERE group_id=? AND role='admin'",
+                                   (gid,)).fetchone()["n"] <= 1:
+            raise ValueError("Die Gruppe braucht mindestens einen Admin – ernenne zuerst einen anderen")
+        c.execute("UPDATE group_members SET role=? WHERE group_id=? AND user_id=?", (want, gid, uid))
+        mid = _group_system(c, gid, None, {"t": "admin", "by": None, "user": {"id": uid, "username": m["username"]},
+                                            "admin": admin})
+    return {"changed": True, "username": m["username"], "group": g["name"], "mid": mid}
+
+
 # ------------------------------------------------------------------ Konto löschen (CLI-Weg)
-def _group_system(c: sqlite3.Connection, gid: str, actor: str | None, data: dict) -> None:
+def _group_system(c: sqlite3.Connection, gid: str, actor: str | None, data: dict) -> str:
     now = db.now_ms()
+    mid = uuid.uuid4().hex
     c.execute("INSERT INTO group_messages (id, group_id, sender_id, envelope, system, created_at, expires_at) "
               "VALUES (?,?,?,NULL,?,?,?)",
-              (uuid.uuid4().hex, gid, actor, json.dumps(data), now, now + config.RETENTION_DAYS * DAY_MS))
+              (mid, gid, actor, json.dumps(data), now, now + config.RETENTION_DAYS * DAY_MS))
+    return mid
 
 
 def delete_user(u: sqlite3.Row) -> dict[str, int]:
