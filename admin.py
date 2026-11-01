@@ -33,6 +33,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import re
 import shlex
 import sqlite3
 import sys
@@ -234,6 +235,40 @@ def cmd_maintenance(a: argparse.Namespace) -> None:
 
 
 # ------------------------------------------------------------------ Befehl: doctor
+def js_import_problems() -> tuple[int, list[str]]:
+    """Prüft wie der Browser: Existieren alle importierten Module, und liefern sie die importierten Namen?"""
+    root = BASE / "static" / "js"
+    imp = re.compile(r"""(?:^|\n)\s*import\s+([^'"`;]*?)\s*from\s*['"](\.[^'"]+)['"]""")
+    exp_decl = re.compile(r"export\s+(?:async\s+)?(?:function\*?|class|const|let|var)\s+([A-Za-z0-9_$]+)")
+    exp_list = re.compile(r"export\s*\{([^}]*)\}")
+    cache: dict[Path, set[str]] = {}
+
+    def exports(p: Path) -> set[str]:
+        if p not in cache:
+            src = p.read_text("utf-8", "replace")
+            names = set(exp_decl.findall(src))
+            for lst in exp_list.findall(src):
+                names |= {x.split(" as ")[-1].strip() for x in lst.split(",") if x.strip()}
+            if re.search(r"export\s+default", src):
+                names.add("default")
+            cache[p] = names
+        return cache[p]
+
+    files = sorted(root.glob("*.js"))
+    problems = []
+    for f in files:
+        for what, spec in imp.findall(f.read_text("utf-8", "replace")):
+            target = (f.parent / spec).resolve()
+            if not target.exists():
+                problems.append(f"{f.name} importiert {spec} – Datei fehlt")
+                continue
+            m = re.search(r"\{([^}]*)\}", what)
+            for n in ([x.split(" as ")[0].strip() for x in m.group(1).split(",") if x.strip()] if m else []):
+                if n not in exports(target):
+                    problems.append(f"{f.name} importiert „{n}“ aus {spec}, das es dort nicht gibt")
+    return len(files), problems
+
+
 def cmd_doctor(a: argparse.Namespace) -> None:
     """Zeigt, ob dieser Projektordner vollständig und der Web-Admin eingebunden ist."""
     env = os.environ.get("VELA_DATA_DIR")
@@ -247,14 +282,15 @@ def cmd_doctor(a: argparse.Namespace) -> None:
     for desc, needle in (("Web-Admin eingebunden (admin_web.init)", "admin_web.init"),
                          ("Wartungs-Endpunkt /api/maintenance", '"/api/maintenance"'),
                          ("Sperr-Prüfung (u.blocked)", "u.blocked"),
-                         ("Zuletzt-gesehen (touch_last_seen)", "touch_last_seen")):
+                         ("Zuletzt-gesehen (touch_last_seen)", "touch_last_seen"),
+                         ("Kamera erlaubt (Permissions-Policy)", "camera=(self)")):
         print(f"  {'✓' if needle in text else '✗'} {desc}")
     print("\nDateien:")
     for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "app/push.py", "app/clientcache.py", "app/vault.py",
                 "static/admin.html", "static/sw.js", "static/badge-96.png", "static/icon.svg", "static/css/admin.css", "static/css/theme.css",
                 "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js", "static/js/notify.js", "static/js/changelog.js",
                 "static/js/cache.js", "static/js/vault.js", "static/js/keystash.js", "static/js/qrlink.js", "static/js/devices.js",
-                "static/js/vendor/argon2.umd.min.js", "static/js/vendor/jsQR.js"):
+                "static/js/vendor/argon2.umd.min.js", "static/js/vendor/jsQR.js", "static/js/boot-guard.js"):
         print(f"  {'✓' if (BASE / rel).exists() else '✗'} {rel}")
     print("\nClient/Datenbank (Patch-Stand):")
     def has(rel: str, needle: str) -> bool:
@@ -268,8 +304,13 @@ def cmd_doctor(a: argparse.Namespace) -> None:
             ("Push + Changelog in app.js", "static/js/app.js", "initNotify(", "patch_vela2.py"),
             ("Entschlüsselungs-Cache in app.js", "static/js/app.js", "cacheGet(", "patch_vela3.py"),
             ("Farbschema in index.html", "static/index.html", "theme.css", "patch_vela3.py"),
-            ("Schlüsseltresor + QR-Anmeldung", "static/js/auth.js", "vaultLogin(", "patch_vela4.py")):
+            ("Schlüsseltresor + QR-Anmeldung", "static/js/auth.js", "vaultLogin(", "patch_vela4.py"),
+            ("Start-Wächter in index.html", "static/index.html", "boot-guard.js", "patch_vela4.py")):
         print(f"  {'✓' if has(rel, needle) else '✗'} {desc}" + ("" if has(rel, needle) else f"   -> {patch}"))
+    n, problems = js_import_problems()
+    print(f"\nJavaScript-Importe ({n} Module):" + (" ✓ alles vorhanden" if not problems else ""))
+    for pr in problems:
+        print(f"  ✗ {pr}")
     m = maintenance.get()
     print(f"\nWartungsmodus:     {'AN – ' + m['message'] if m['on'] else 'aus'}")
     admins = ops.list_users(admins=True)

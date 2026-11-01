@@ -118,32 +118,87 @@ export function describeUA(ua) {
   return `${br} auf ${os}`;
 }
 
+/** Erkennt die häufigsten Gründe, warum die Kamera nicht startet, und erklärt sie verständlich. */
+export async function cameraProblem() {
+  if (!navigator.mediaDevices?.getUserMedia) return 'Dieser Browser erlaubt hier keinen Kamerazugriff (die Seite muss über HTTPS geöffnet sein).';
+  const policy = document.permissionsPolicy || document.featurePolicy;
+  if (policy?.allowsFeature && !policy.allowsFeature('camera')) {
+    return 'Der Server verbietet der Seite die Kamera (Header „Permissions-Policy: camera=()“). Bitte auf dem Server patch_all.py ausführen und den Dienst neu starten.';
+  }
+  try {
+    const st = await navigator.permissions?.query({ name: 'camera' });
+    if (st?.state === 'denied') return 'Die Kamera ist für diese Seite blockiert. Tippe in der Adressleiste auf das Schloss-Symbol → Berechtigungen → Kamera → Zulassen und versuche es erneut.';
+  } catch { /* nicht in jedem Browser abfragbar */ }
+  return null;
+}
+
+/** Liest einen QR-Code aus einem Foto (Ausweichlösung, wenn der Live-Scan nicht geht). */
+export async function decodeImage(file) {
+  const bmp = await createImageBitmap(file);
+  const scale = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.max(1, Math.round(bmp.width * scale)); canvas.height = Math.max(1, Math.round(bmp.height * scale));
+  const ctx = canvas.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
+  bmp.close?.();
+  if ('BarcodeDetector' in window) {
+    try { const r = await new BarcodeDetector({ formats: ['qr_code'] }).detect(canvas); if (r[0]?.rawValue) return r[0].rawValue; } catch { /* weiter mit jsQR */ }
+  }
+  await loadClassic(new URL('./vendor/jsQR.js', import.meta.url).href, () => globalThis.jsQR);
+  const im = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  return globalThis.jsQR(im.data, im.width, im.height)?.data || null;
+}
+
 function scanDialog() {
   return new Promise((resolve) => {
     const video = h('video', { class: 'qr-video', playsinline: true, muted: true, autoplay: true });
     const manual = field({ label: 'Oder Code als Text einfügen', name: 'code', required: false, autocomplete: 'off' });
-    const status = h('p', { class: 'small muted' }, 'Kamera wird gestartet …');
-    let stream = null, stop = false, done = false, d = null;
+    const status = h('p', { class: 'small', 'aria-live': 'polite' }, 'Kamera wird gestartet …');
+    const photo = h('input', { type: 'file', accept: 'image/*', capture: 'environment', hidden: true });
+    const retry = button('Kamera erneut versuchen', { kind: 'tonal', icon: 'refresh', onClick: () => startCamera() });
+    const photoBtn = button('Foto vom QR-Code aufnehmen', { kind: 'tonal', icon: 'camera', onClick: () => photo.click() });
+    retry.hidden = true;
+    let stream = null, stop = false, done = false, d = null, run = 0;
+    const stopStream = () => { stream?.getTracks().forEach((t) => t.stop()); stream = null; };
     const finish = (v) => {
       if (done) return;
-      done = true; stop = true;
-      stream?.getTracks().forEach((t) => t.stop());
+      done = true; stop = true; stopStream();
       try { d?.close(); } catch { /* ok */ }
       resolve(v);
     };
-    d = dialog({ title: 'QR-Code scannen', icon: 'camera', body: h('div', {}, h('div', { class: 'qr-scan' }, video), status, manual.wrap),
+    d = dialog({ title: 'QR-Code scannen', icon: 'camera',
+      body: h('div', {}, h('div', { class: 'qr-scan' }, video), status, h('div', { class: 'row gap' }, retry, photoBtn), photo, manual.wrap),
       actions: [{ label: 'Abbrechen' }, { label: 'Text verwenden', primary: true, onClick: () => { const t = manual.input.value.trim(); if (!t) return false; finish(t); } }] });
     d.done.then(() => finish(null));
-    (async () => {
+
+    photo.addEventListener('change', async () => {
+      const f = photo.files?.[0];
+      photo.value = '';
+      if (!f) return;
+      status.textContent = 'Foto wird gelesen …';
+      try {
+        const t = await decodeImage(f);
+        if (t?.startsWith('vela-link:')) return finish(t);
+        status.textContent = 'Im Foto wurde kein Vela-QR-Code gefunden. Bitte näher und gerade fotografieren, der ganze Code muss im Bild sein.';
+      } catch (e) { status.textContent = `Das Foto konnte nicht gelesen werden (${e.message}).`; }
+    });
+
+    async function startCamera() {
+      const me = ++run;
+      stopStream(); retry.hidden = true;
+      status.textContent = 'Kamera wird gestartet …';
+      const problem = await cameraProblem();
+      if (problem) { status.textContent = `${problem} Du kannst stattdessen ein Foto aufnehmen oder den Code als Text einfügen.`; retry.hidden = false; return; }
       try {
         stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false });
+        if (done || me !== run) { stopStream(); return; }
         video.srcObject = stream; await video.play();
         status.textContent = 'Halte die Kamera auf den QR-Code an deinem Rechner.';
         const native = 'BarcodeDetector' in window ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
         if (!native) await loadClassic(new URL('./vendor/jsQR.js', import.meta.url).href, () => globalThis.jsQR);
         const canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
         const tick = async () => {
-          if (stop) return;
+          if (stop || me !== run) return;
           try {
             let text = null;
             if (video.readyState >= 2) {
@@ -159,8 +214,12 @@ function scanDialog() {
           setTimeout(tick, native ? 150 : 250);
         };
         tick();
-      } catch (e) { status.textContent = `Kamera nicht verfügbar – füge den Code unten als Text ein. (${e.message})`; }
-    })();
+      } catch (e) {
+        status.textContent = `Kamera nicht verfügbar (${e.name}: ${e.message}). Prüfe die Kamera-Berechtigung der Seite, nimm ein Foto auf oder füge den Code als Text ein.`;
+        retry.hidden = false;
+      }
+    }
+    startCamera();
   });
 }
 
