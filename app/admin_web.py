@@ -1,3 +1,4 @@
+from __future__ import annotations
 import os
 import psutil
 """Web-Admin unter /admin: Nutzerverwaltung im laufenden Betrieb.
@@ -15,8 +16,6 @@ Schutz:
 Gruppen: /api/admin/groups liefert alle Gruppen samt Mitgliedern und Rollen (nur Metadaten); Gruppen-Admins
 lassen sich mit /api/admin/groups/role ernennen bzw. entziehen (Step-up + Audit-Eintrag, Mitglieder erfahren es live).
 """
-from __future__ import annotations
-
 import ipaddress
 import os
 import re
