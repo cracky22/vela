@@ -8,7 +8,7 @@ import {
 } from './crypto.js';
 import { S, saveIdentity } from './state.js';
 import { isWebKit } from './keycompat.js';
-import { version } from './app.js';
+import { version } from './version.js';
 import { vaultLogin, unlockFromVault, vaultUnlockSlot } from './vault.js';
 import { renderQrLogin } from './qrlink.js';
 
