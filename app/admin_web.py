@@ -1,3 +1,5 @@
+import os
+import psutil
 """Web-Admin unter /admin: Nutzerverwaltung im laufenden Betrieb.
 
 Läuft im Serverprozess und nutzt dessen Datenbankverbindungen – deshalb ist kein zweiter Prozess
@@ -395,3 +397,27 @@ def init(app, deps: dict[str, Any]) -> None:
     def admin_slash():
         # relative Weiterleitung, damit sie auch hinter einem Reverse-Proxy-Unterpfad (/vela) stimmt
         return RedirectResponse("../admin")
+
+@router.get("/stats")
+def server_stats(admin: Admin):
+    load1, load5, load15 = os.getloadavg() if hasattr(os, "getloadavg") else (0.0, 0.0, 0.0)
+    cpu_percent = psutil.cpu_percent(interval=None)
+    vela_stats = {"active": False, "cpu_percent": 0.0, "memory_mb": 0.0}
+    try:
+        for proc in psutil.process_iter(['name', 'cmdline', 'cpu_percent', 'memory_info']):
+            name = proc.info.get('name', '').lower()
+            cmdline = " ".join(proc.info.get('cmdline') or [])
+            if 'vela' in name or 'vela' in cmdline:
+                vela_stats['active'] = True
+                vela_stats['cpu_percent'] += proc.info.get('cpu_percent', 0.0)
+                mem = proc.info.get('memory_info')
+                if mem:
+                    vela_stats['memory_mb'] += mem.rss / (1024 * 1024)
+    except Exception:
+        pass
+        
+    return {
+        "load_avg": [load1, load5, load15],
+        "cpu_percent": cpu_percent,
+        "vela": vela_stats
+    }
