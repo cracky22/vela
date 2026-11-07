@@ -1,0 +1,177 @@
+1<?xml version="1.0" encoding="utf-8"?>
+2<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+3    package="de.cracky.vela"
+4    android:versionCode="1"
+5    android:versionName="1.0" >
+6
+7    <uses-sdk
+8        android:minSdkVersion="26"
+9        android:targetSdkVersion="35" />
+10
+11    <uses-permission android:name="android.permission.INTERNET" />
+11-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:4:5-67
+11-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:4:22-64
+12    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+12-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:5:5-79
+12-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:5:22-76
+13    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+13-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:6:5-77
+13-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:6:22-74
+14    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+14-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:7:5-71
+14-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:7:22-68
+15    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+15-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:8:5-77
+15-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:8:22-74
+16    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+16-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:9:5-89
+16-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:9:22-86
+17
+18    <permission
+18-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:22:5-24:47
+19        android:name="de.cracky.vela.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION"
+19-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:23:9-81
+20        android:protectionLevel="signature" />
+20-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:24:9-44
+21
+22    <uses-permission android:name="de.cracky.vela.DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION" />
+22-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:26:5-97
+22-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:26:22-94
+23
+24    <application
+24-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:11:5-45:19
+25        android:name="de.cracky.vela.VelaApp"
+25-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:12:9-32
+26        android:allowBackup="false"
+26-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:13:9-36
+27        android:appComponentFactory="androidx.core.app.CoreComponentFactory"
+27-->[androidx.core:core:1.13.1] C:\Users\marti\.gradle\caches\8.9\transforms\3f4414e7258e46b34c51e68305e2ec6f\transformed\core-1.13.1\AndroidManifest.xml:28:18-86
+28        android:debuggable="true"
+29        android:extractNativeLibs="false"
+30        android:icon="@mipmap/ic_launcher"
+30-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:14:9-43
+31        android:label="@string/app_name"
+31-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:16:9-41
+32        android:largeHeap="true"
+32-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:17:9-33
+33        android:roundIcon="@mipmap/ic_launcher"
+33-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:15:9-48
+34        android:supportsRtl="true"
+34-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:18:9-35
+35        android:theme="@style/Theme.Vela"
+35-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:20:9-42
+36        android:usesCleartextTraffic="true" >
+36-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:19:9-44
+37        <activity
+37-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:22:9-31:20
+38            android:name="de.cracky.vela.MainActivity"
+38-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:23:13-41
+39            android:exported="true"
+39-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:24:13-36
+40            android:launchMode="singleTop"
+40-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:25:13-43
+41            android:windowSoftInputMode="adjustResize" >
+41-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:26:13-55
+42            <intent-filter>
+42-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:27:13-30:29
+43                <action android:name="android.intent.action.MAIN" />
+43-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:28:17-69
+43-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:28:25-66
+44
+45                <category android:name="android.intent.category.LAUNCHER" />
+45-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:29:17-77
+45-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:29:27-74
+46            </intent-filter>
+47        </activity>
+48
+49        <receiver
+49-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:33:9-35:40
+50            android:name="de.cracky.vela.service.NotificationActionReceiver"
+50-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:34:13-63
+51            android:exported="false" />
+51-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:35:13-37
+52
+53        <service
+53-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:37:9-44:19
+54            android:name="de.cracky.vela.service.KeepAliveService"
+54-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:38:13-53
+55            android:exported="false"
+55-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:39:13-37
+56            android:foregroundServiceType="specialUse" >
+56-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:40:13-55
+57            <property
+57-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:41:13-43:98
+58                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+58-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:42:17-76
+59                android:value="Persistente Verbindung zum selbst gehosteten Nachrichtenserver" />
+59-->C:\Users\marti\Downloads\Vela-Android\Vela\app\src\main\AndroidManifest.xml:43:17-95
+60        </service>
+61
+62        <provider
+62-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:24:9-32:20
+63            android:name="androidx.startup.InitializationProvider"
+63-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:25:13-67
+64            android:authorities="de.cracky.vela.androidx-startup"
+64-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:26:13-68
+65            android:exported="false" >
+65-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:27:13-37
+66            <meta-data
+66-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:29:13-31:52
+67                android:name="androidx.emoji2.text.EmojiCompatInitializer"
+67-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:30:17-75
+68                android:value="androidx.startup" />
+68-->[androidx.emoji2:emoji2:1.3.0] C:\Users\marti\.gradle\caches\8.9\transforms\e9a4de5f87829d8e56de87ff35dfed60\transformed\emoji2-1.3.0\AndroidManifest.xml:31:17-49
+69            <meta-data
+69-->[androidx.lifecycle:lifecycle-process:2.8.3] C:\Users\marti\.gradle\caches\8.9\transforms\527ac84306fe6607d1ab2186d5efcc29\transformed\lifecycle-process-2.8.3\AndroidManifest.xml:29:13-31:52
+70                android:name="androidx.lifecycle.ProcessLifecycleInitializer"
+70-->[androidx.lifecycle:lifecycle-process:2.8.3] C:\Users\marti\.gradle\caches\8.9\transforms\527ac84306fe6607d1ab2186d5efcc29\transformed\lifecycle-process-2.8.3\AndroidManifest.xml:30:17-78
+71                android:value="androidx.startup" />
+71-->[androidx.lifecycle:lifecycle-process:2.8.3] C:\Users\marti\.gradle\caches\8.9\transforms\527ac84306fe6607d1ab2186d5efcc29\transformed\lifecycle-process-2.8.3\AndroidManifest.xml:31:17-49
+72            <meta-data
+72-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:29:13-31:52
+73                android:name="androidx.profileinstaller.ProfileInstallerInitializer"
+73-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:30:17-85
+74                android:value="androidx.startup" />
+74-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:31:17-49
+75        </provider>
+76
+77        <receiver
+77-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:34:9-52:20
+78            android:name="androidx.profileinstaller.ProfileInstallReceiver"
+78-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:35:13-76
+79            android:directBootAware="false"
+79-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:36:13-44
+80            android:enabled="true"
+80-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:37:13-35
+81            android:exported="true"
+81-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:38:13-36
+82            android:permission="android.permission.DUMP" >
+82-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:39:13-57
+83            <intent-filter>
+83-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:40:13-42:29
+84                <action android:name="androidx.profileinstaller.action.INSTALL_PROFILE" />
+84-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:17-91
+84-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:41:25-88
+85            </intent-filter>
+86            <intent-filter>
+86-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:43:13-45:29
+87                <action android:name="androidx.profileinstaller.action.SKIP_FILE" />
+87-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:17-85
+87-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:44:25-82
+88            </intent-filter>
+89            <intent-filter>
+89-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:46:13-48:29
+90                <action android:name="androidx.profileinstaller.action.SAVE_PROFILE" />
+90-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:17-88
+90-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:47:25-85
+91            </intent-filter>
+92            <intent-filter>
+92-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:49:13-51:29
+93                <action android:name="androidx.profileinstaller.action.BENCHMARK_OPERATION" />
+93-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:17-95
+93-->[androidx.profileinstaller:profileinstaller:1.3.1] C:\Users\marti\.gradle\caches\8.9\transforms\4d07dd122260385b5a0f7c79a656e780\transformed\profileinstaller-1.3.1\AndroidManifest.xml:50:25-92
+94            </intent-filter>
+95        </receiver>
+96    </application>
+97
+98</manifest>

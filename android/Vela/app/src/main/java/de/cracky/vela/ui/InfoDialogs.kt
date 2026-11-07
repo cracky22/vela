@@ -4,6 +4,9 @@ package de.cracky.vela.ui
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
@@ -13,6 +16,11 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
@@ -86,8 +94,8 @@ fun ContactInfoDialog(repo: Repo, c: Conv, onClose: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 if (c.online) Text("online", color = MaterialTheme.colorScheme.tertiary)
                 Text(c.about.ifBlank { "Keine Info hinterlegt" }, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Text((if (c.verified) "✔ Verifiziert" else "🔒 Ende-zu-Ende-verschlüsselt") + " · RSA ${c.keyBits}")
-                if (c.ttl > 0) Text("⏱ Verschwindende Nachrichten: ${de.cracky.vela.data.ttlLabel(c.ttl)}")
+                IconText(if (c.verified) Icons.Filled.Verified else Icons.Filled.Lock, (if (c.verified) "Verifiziert" else "Ende-zu-Ende-verschlüsselt") + " · RSA ${c.keyBits}")
+                if (c.ttl > 0) IconText(Icons.Filled.Timer, "Verschwindende Nachrichten: ${de.cracky.vela.data.ttlLabel(c.ttl)}")
                 OutlinedButton({ safety = true }, Modifier.fillMaxWidth()) { Text("Sicherheitsnummer") }
                 TextButton({ confirmRemove = true }) { Text("Kontakt entfernen", color = MaterialTheme.colorScheme.error) }
             }
@@ -114,6 +122,9 @@ fun GroupInfoDialog(repo: Repo, g: Conv, onClose: () -> Unit) {
     var adding by remember { mutableStateOf(false) }
     var confirmLeave by remember { mutableStateOf(false) }
     var memberMenu by remember { mutableStateOf<String?>(null) }
+    val pickGroupImage = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) repo.bg { repo.setAvatar(uri, g.id); repo.say("Gruppenbild aktualisiert") }
+    }
     val candidates = convs.filter { !it.isGroup && it.status == "accepted" && g.members.none { m -> m.id == it.id } }
 
     Dialog(onClose, DialogProperties(usePlatformDefaultWidth = false)) {
@@ -123,7 +134,16 @@ fun GroupInfoDialog(repo: Repo, g: Conv, onClose: () -> Unit) {
             }) { pad ->
                 LazyColumn(Modifier.padding(pad).padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     item {
-                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) { Avatar(repo, g.id, true, g.avatarVersion, g.title, 96.dp) }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
+                            Box(Modifier.clickable(enabled = canEdit) { pickGroupImage.launch("image/*") }) {
+                                Avatar(repo, g.id, true, g.avatarVersion, g.title, 96.dp)
+                                if (canEdit) Icon(
+                                    Icons.Filled.PhotoCamera, "Gruppenbild ändern",
+                                    Modifier.align(Alignment.BottomEnd).size(28.dp).background(MaterialTheme.colorScheme.primary, androidx.compose.foundation.shape.CircleShape).padding(5.dp),
+                                    tint = MaterialTheme.colorScheme.onPrimary,
+                                )
+                            }
+                        }
                         OutlinedTextField(name, { name = it.take(64) }, label = { Text("Name") }, enabled = canEdit, singleLine = true, modifier = Modifier.fillMaxWidth())
                         OutlinedTextField(desc, { desc = it.take(500) }, label = { Text("Beschreibung") }, enabled = canEdit, modifier = Modifier.fillMaxWidth())
                         if (canEdit && (name != g.title || desc != g.about) && name.isNotBlank()) {
@@ -144,7 +164,7 @@ fun GroupInfoDialog(repo: Repo, g: Conv, onClose: () -> Unit) {
                             Avatar(repo, m.id, false, m.avatarVersion, m.username, 40.dp)
                             Column(Modifier.weight(1f)) {
                                 Text(if (m.id == repo.myId) "Du" else m.username)
-                                if (repo.isChanged(m.id)) Text("⚠ Schlüssel geändert", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                                if (repo.isChanged(m.id)) IconText(Icons.Filled.Warning, "Schlüssel geändert", MaterialTheme.colorScheme.error, MaterialTheme.typography.labelSmall)
                             }
                             if (m.role == "admin") Text("Admin", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
                             DropdownMenu(memberMenu == m.id, { memberMenu = null }) {

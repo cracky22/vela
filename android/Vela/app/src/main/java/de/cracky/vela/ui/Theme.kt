@@ -1,7 +1,12 @@
 package de.cracky.vela.ui
 
 import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
+import androidx.compose.material3.Typography
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
@@ -34,7 +39,27 @@ private val Dark = darkColorScheme(
     surfaceContainer = Color(0xFF261E16), surfaceContainerHigh = Color(0xFF30281F),
 )
 
+// Ausdrucksstärkere Formen (großzügige Rundungen) und kräftigere Schriftschnitte im Stil von Material 3 Expressive
+private val VelaShapes = Shapes(
+    extraSmall = RoundedCornerShape(10.dp),
+    small = RoundedCornerShape(16.dp),
+    medium = RoundedCornerShape(24.dp),
+    large = RoundedCornerShape(32.dp),
+    extraLarge = RoundedCornerShape(40.dp),
+)
+
+private val base = Typography()
+private val VelaType = Typography(
+    displaySmall = base.displaySmall.copy(fontWeight = FontWeight.Bold),
+    headlineLarge = base.headlineLarge.copy(fontWeight = FontWeight.Bold),
+    headlineMedium = base.headlineMedium.copy(fontWeight = FontWeight.Bold),
+    headlineSmall = base.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
+    titleLarge = base.titleLarge.copy(fontWeight = FontWeight.SemiBold),
+    titleMedium = base.titleMedium.copy(fontWeight = FontWeight.SemiBold),
+    labelLarge = base.labelLarge.copy(fontWeight = FontWeight.SemiBold),
+)
+
 @Composable
 fun VelaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, content = content)
+    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, shapes = VelaShapes, typography = VelaType, content = content)
 }

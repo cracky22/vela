@@ -8,6 +8,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -49,7 +50,7 @@ fun Avatar(repo: Repo, id: String, isGroup: Boolean, version: Int, name: String,
             if (b != null) { avatarCache.put(key, b); value = b } else missing.add(key)
         }
     }
-    Box(Modifier.size(size).clip(CircleShape).background(hueColor(name)), contentAlignment = Alignment.Center) {
+    Box(Modifier.size(size).clip(if (isGroup) RoundedCornerShape(size * 0.32f) else CircleShape).background(hueColor(name)), contentAlignment = Alignment.Center) {
         val b = bmp
         if (b != null) Image(b.asImageBitmap(), null, Modifier.size(size), contentScale = ContentScale.Crop)
         else Text(name.take(2).uppercase(), color = Color.White, fontSize = (size.value * 0.38f).sp)
@@ -90,11 +91,11 @@ fun fmtDuration(s: Double): String { val t = s.toInt().coerceAtLeast(0); return 
 /** Text für die Chatliste: Vorschau der letzten Nachricht. */
 fun listPreview(c: Conv, dec: Map<String, Dec>, repo: Repo): String {
     val m = c.last ?: return if (c.status == "accepted") "Noch keine Nachrichten" else ""
-    if (m.deletedAt != null) return "🚫 Nachricht gelöscht"
+    if (m.deletedAt != null) return "Nachricht gelöscht"
     if (m.system != null) return systemText(repo, m.system)
-    if (m.viewOnce) return if (m.viewedAt != null) "🔒 Einmalansicht geöffnet" else "🔒 Einmalansicht"
-    val d = dec[m.id] ?: return "🔒 …"
-    val body = d.payload?.let { previewText(it) } ?: return "🔒 Nicht lesbar"
+    if (m.viewOnce) return if (m.viewedAt != null) "Einmalansicht geöffnet" else "Einmalansicht"
+    val d = dec[m.id] ?: return "…"
+    val body = d.payload?.let { previewText(it) } ?: return "Nicht lesbar"
     val prefix = if (m.from == repo.myId) "Du: " else if (c.isGroup) repo.nameOf(m.from) + ": " else ""
     return prefix + body
 }

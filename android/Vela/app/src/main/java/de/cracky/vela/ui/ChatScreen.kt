@@ -10,6 +10,23 @@ import android.graphics.Bitmap
 import android.media.MediaRecorder
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.material3.FilledIconButton
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
@@ -21,6 +38,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
@@ -30,7 +48,14 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AttachFile
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.FiberManualRecord
+import androidx.compose.material.icons.filled.Image
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LooksOne
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -155,7 +180,10 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     var text by remember(convId) { mutableStateOf("") }
     var reply by remember(convId) { mutableStateOf<ReplyRef?>(null) }
     var editing by remember(convId) { mutableStateOf<Msg?>(null) }
+    val haptics = rememberHaptics()
+    val openedAt = remember(convId) { System.currentTimeMillis() }
     var attachMenu by remember { mutableStateOf(false) }
+    var viewOnce by remember(convId) { mutableStateOf(false) }
     var headerMenu by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     var ttlDialog by remember { mutableStateOf(false) }
@@ -169,7 +197,7 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     fun fail(e: Throwable) = repo.say(e.message ?: "Fehler")
 
     val pickImage = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
-        if (uri != null) repo.bg { repo.sendImage(convId, uri) }
+        if (uri != null) { val vo = viewOnce; viewOnce = false; repo.bg { repo.sendImage(convId, uri, vo) } }
     }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) repo.bg { repo.sendFile(convId, uri) }
@@ -193,7 +221,11 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
         recSecs = 0
         while (recording) { delay(100); recorder.sample(); recSecs = ((System.currentTimeMillis() - recorder.startedAt) / 1000).toInt() }
     }
+    var firstLast by remember(convId) { mutableStateOf(true) }
     LaunchedEffect(view.visible.lastOrNull()?.id) {
+        val last = view.visible.lastOrNull()
+        if (!firstLast && last != null && last.from != repo.myId && last.system == null) haptics.light()
+        if (last != null) firstLast = false
         if (listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0)
         repo.markRead(convId)
     }
@@ -224,13 +256,13 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     fun send() {
         val t = text.trim()
         if (t.isEmpty()) return
-        val ed = editing; val rp = reply
-        text = ""; reply = null; editing = null
+        val ed = editing; val rp = reply; val vo = viewOnce && ed == null
+        text = ""; reply = null; editing = null; viewOnce = false
         repo.bg {
             if (ed != null) {
                 val old = dec[ed.id]?.payload?.let { previewText(it) }
                 if (old != null && t != old) repo.edit(convId, ed.id, t)
-            } else repo.sendText(convId, t, rp)
+            } else repo.sendText(convId, t, rp, vo)
         }
     }
 
@@ -273,6 +305,7 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
             LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, reverseLayout = true) {
                 val shown = view.visible.reversed()
                 val livePreview = live[convId]
+                if (others.isNotEmpty() && (conv.isGroup || livePreview.isNullOrEmpty())) item(key = "typing") { TypingBubble(Modifier.animateItem()) }
                 if (!conv.isGroup && !livePreview.isNullOrEmpty()) item(key = "live") {
                     Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
                         Column(
@@ -285,18 +318,19 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                 }
                 items(uploads.filter { it.convId == convId }, key = { "u" + it.id }) { u ->
                     Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                        Text("🔒 ${u.label} wird verschlüsselt und gesendet …", style = MaterialTheme.typography.labelMedium)
+                        IconText(Icons.Filled.Lock, "${u.label} wird verschlüsselt und gesendet …", style = MaterialTheme.typography.labelMedium)
                         LinearProgressIndicator(progress = { u.progress }, modifier = Modifier.fillMaxWidth())
                     }
                 }
                 items(shown, key = { it.id }) { m ->
-                    if (m.system != null) SystemRow(repo, m) else {
+                    if (m.system != null) Box(Modifier.animateItem()) { SystemRow(repo, m) } else {
                         val idx = shown.indexOf(m)
                         val older = shown.getOrNull(idx + 1)
                         val showSender = conv.isGroup && (older == null || older.from != m.from || older.system != null)
-                        MessageBubble(
+                        Box(Modifier.animateItem()) { MessageBubble(
                             repo, m, dec[m.id], conv, view.reactions[m.id].orEmpty(), view.edits[m.id], showSender,
-                            BubbleActions(
+                            animateIn = m.pending || m.ts >= openedAt,
+                            a = BubbleActions(
                                 onReply = {
                                     val p = dec[m.id]?.payload
                                     if (p != null) { editing = null; reply = ReplyRef(m.id, m.from, previewText(p).take(100)) }
@@ -322,7 +356,7 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                                 onOpenImage = { viewer = it },
                                 onJump = { id -> val i = shown.indexOfFirst { it.id == id }; if (i >= 0) scope.launch { listState.animateScrollToItem(i) } },
                             ),
-                        )
+                        ) }
                     }
                 }
                 if (more[convId] == true) item(key = "more") {
@@ -333,7 +367,7 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                 }
                 item(key = "e2e") {
                     Text(
-                        "🔒 Ende-zu-Ende-verschlüsselt. Nachrichten werden nach ${if (conv.ttl > 0) de.cracky.vela.data.ttlLabel(conv.ttl) else "30 Tagen"} vom Server gelöscht.",
+                        "Ende-zu-Ende-verschlüsselt. Nachrichten werden nach ${if (conv.ttl > 0) de.cracky.vela.data.ttlLabel(conv.ttl) else "30 Tagen"} vom Server gelöscht.",
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(16.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
@@ -341,43 +375,67 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
             }
 
             // ---------------------------------------------------------------- Eingabe
-            (reply?.let { "Antwort an ${repo.nameOf(it.from)}: ${it.snippet}" } ?: editing?.let { "Nachricht bearbeiten" })?.let { label ->
-                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 12.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium, modifier = Modifier.weight(1f))
-                    IconButton({ reply = null; if (editing != null) { editing = null; text = "" } }) { Icon(Icons.Default.Close, "Abbrechen") }
+            val barLabel = reply?.let { "Antwort an ${repo.nameOf(it.from)}: ${it.snippet}" } ?: editing?.let { "Nachricht bearbeiten" }
+            AnimatedVisibility(barLabel != null, enter = expandVertically(spring(stiffness = 500f)) + fadeIn(), exit = shrinkVertically() + fadeOut()) {
+                Row(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 16.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(barLabel.orEmpty(), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelLarge, modifier = Modifier.weight(1f))
+                    IconButton({ haptics.light(); reply = null; if (editing != null) { editing = null; text = "" } }) { Icon(Icons.Default.Close, "Abbrechen") }
                 }
             }
             if (conv.status != "accepted") {
                 Text("Erst nach angenommener Kontaktanfrage möglich.", Modifier.padding(16.dp))
             } else if (recording) {
                 Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    TextButton({ recorder.cancel(); recording = false }) { Text("🗑") }
-                    Text("● ${fmtDuration(recSecs.toDouble())}", color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
-                    IconButton({
+                    IconButton({ haptics.reject(); recorder.cancel(); recording = false }) { Icon(Icons.Filled.Delete, "Verwerfen") }
+                    val pulse = rememberInfiniteTransition(label = "rec").animateFloat(
+                        initialValue = 0.3f, targetValue = 1f,
+                        animationSpec = infiniteRepeatable(tween(700), RepeatMode.Reverse), label = "recPulse",
+                    )
+                    Icon(Icons.Filled.FiberManualRecord, null, Modifier.size(14.dp).graphicsLayer { alpha = pulse.value }, tint = MaterialTheme.colorScheme.error)
+                    Text(fmtDuration(recSecs.toDouble()), color = MaterialTheme.colorScheme.error, modifier = Modifier.weight(1f))
+                    FilledIconButton({
+                        haptics.confirm()
                         recording = false
                         val r = recorder.stop()
                         if (r != null && r.second >= 0.6) repo.bg { repo.sendVoice(convId, r.first, r.second, r.third) }
                         else r?.first?.delete()
-                    }) { Icon(Icons.AutoMirrored.Filled.Send, "Senden", tint = MaterialTheme.colorScheme.primary) }
+                    }) { Icon(Icons.AutoMirrored.Filled.Send, "Senden") }
                 }
             } else {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.Bottom) {
                     Box {
-                        IconButton({ attachMenu = true }) { Icon(Icons.Default.Add, "Anhang") }
+                        IconButton({ attachMenu = true }) { Icon(Icons.Filled.AttachFile, "Anhang") }
                         DropdownMenu(attachMenu, { attachMenu = false }) {
-                            DropdownMenuItem({ Text("📷 Foto") }, { attachMenu = false; pickImage.launch("image/*") })
-                            DropdownMenuItem({ Text("📎 Datei") }, { attachMenu = false; pickFile.launch("*/*") })
+                            DropdownMenuItem({ Text(if (viewOnce) "Einmalansicht-Foto" else "Foto") }, { attachMenu = false; pickImage.launch("image/*") },
+                                leadingIcon = { Icon(Icons.Filled.Image, null) })
+                            DropdownMenuItem({ Text("Datei") }, { attachMenu = false; pickFile.launch("*/*") },
+                                leadingIcon = { Icon(Icons.Filled.InsertDriveFile, null) })
                         }
                     }
+                    if (!conv.isGroup) IconButton({ viewOnce = !viewOnce; haptics.toggle(viewOnce) }) {
+                        Icon(
+                            Icons.Filled.LooksOne, "Einmalansicht",
+                            tint = if (viewOnce) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                     OutlinedTextField(
-                        text, { if (it.length <= 20000) text = it }, Modifier.weight(1f), placeholder = { Text("Nachricht") }, maxLines = 6,
+                        text, { if (it.length <= 20000) text = it }, Modifier.weight(1f),
+                        placeholder = { Text(if (editing != null) "Nachricht bearbeiten" else if (viewOnce) "Einmalansicht-Nachricht" else "Nachricht") }, maxLines = 6,
+                        shape = RoundedCornerShape(28.dp),
                     )
-                    if (text.isBlank()) TextButton({
-                        if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
-                            try { recorder.start(); recording = true } catch (e: Exception) { repo.say("Aufnahme nicht möglich") }
-                        } else micPermission.launch(Manifest.permission.RECORD_AUDIO)
-                    }) { Text("🎤", style = MaterialTheme.typography.titleLarge) }
-                    else IconButton({ send() }) { Icon(Icons.AutoMirrored.Filled.Send, "Senden", tint = MaterialTheme.colorScheme.primary) }
+                    AnimatedContent(
+                        targetState = text.isBlank(),
+                        transitionSpec = { (scaleIn(spring(dampingRatio = 0.55f, stiffness = 500f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) },
+                        label = "sendMic",
+                    ) { blank ->
+                        if (blank) IconButton({
+                            haptics.light()
+                            if (androidx.core.content.ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) == android.content.pm.PackageManager.PERMISSION_GRANTED) {
+                                try { recorder.start(); recording = true; haptics.confirm() } catch (e: Exception) { repo.say("Aufnahme nicht möglich") }
+                            } else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+                        }) { Icon(Icons.Filled.Mic, "Sprachnachricht aufnehmen") }
+                        else FilledIconButton({ haptics.confirm(); send() }, Modifier.size(48.dp)) { Icon(Icons.AutoMirrored.Filled.Send, "Senden") }
+                    }
                 }
             }
         }
@@ -399,7 +457,10 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                         Row(Modifier.fillMaxWidth().clickable {
                             ttlDialog = false
                             scope.launch { try { repo.setTtl(conv, sec) } catch (e: Exception) { fail(e) } }
-                        }.padding(vertical = 10.dp)) { Text((if (conv.ttl == sec) "● " else "○ ") + label) }
+                        }.padding(vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                            androidx.compose.material3.RadioButton(conv.ttl == sec, null)
+                            Text(label, Modifier.padding(start = 12.dp))
+                        }
                     }
                 }
             },
@@ -407,4 +468,24 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
         )
     }
     if (info) { if (conv.isGroup) GroupInfoDialog(repo, conv) { info = false } else ContactInfoDialog(repo, conv) { info = false } }
+}
+
+/** Drei federnde Punkte: „jemand schreibt“. */
+@Composable
+private fun TypingBubble(modifier: Modifier = Modifier) {
+    val t = rememberInfiniteTransition(label = "typing")
+    Row(modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+        Row(
+            Modifier.clip(RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)).background(MaterialTheme.colorScheme.surfaceVariant).padding(horizontal = 16.dp, vertical = 14.dp),
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            for (i in 0 until 3) {
+                val y = t.animateFloat(
+                    initialValue = 0f, targetValue = -6f,
+                    animationSpec = infiniteRepeatable(tween(420, delayMillis = i * 140), RepeatMode.Reverse), label = "dot$i",
+                )
+                Box(Modifier.size(8.dp).graphicsLayer { translationY = y.value }.background(MaterialTheme.colorScheme.onSurfaceVariant, androidx.compose.foundation.shape.CircleShape))
+            }
+        }
+    }
 }

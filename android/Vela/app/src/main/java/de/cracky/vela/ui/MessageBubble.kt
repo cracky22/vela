@@ -2,11 +2,32 @@
 
 package de.cracky.vela.ui
 
+import android.Manifest
+import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaPlayer
 import android.util.Base64
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.material.icons.automirrored.filled.Reply
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -15,22 +36,46 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Done
+import androidx.compose.material.icons.filled.DoneAll
+import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.InsertDriveFile
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.LooksOne
+import androidx.compose.material.icons.filled.Pause
+import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FilledTonalIconButton
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -40,21 +85,29 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.SecureFlagPolicy
 import de.cracky.vela.data.Conv
 import de.cracky.vela.data.Dec
 import de.cracky.vela.data.FileMeta
 import de.cracky.vela.data.Msg
 import de.cracky.vela.data.Repo
+import de.cracky.vela.data.decodeSampled
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONObject
@@ -68,6 +121,15 @@ class BubbleActions(
     val onJump: (String) -> Unit,
 )
 
+/** Kleine Zeile aus Symbol und Text. */
+@Composable
+fun IconText(icon: ImageVector, text: String, color: Color = LocalContentColor.current, style: TextStyle = MaterialTheme.typography.bodyMedium) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        Icon(icon, null, Modifier.size(16.dp), tint = color)
+        Text(text, color = color, style = style)
+    }
+}
+
 @Composable
 fun SystemRow(repo: Repo, m: Msg) {
     Box(Modifier.fillMaxWidth().padding(vertical = 6.dp), Alignment.Center) {
@@ -78,68 +140,139 @@ fun SystemRow(repo: Repo, m: Msg) {
     }
 }
 
-fun readTick(m: Msg, c: Conv, me: String): String {
-    if (m.failed) return "⚠"
-    if (m.pending) return "🕓"
-    if (!c.isGroup) return if (m.readAt != null) "✓✓" else "✓"
+enum class Tick { Pending, Sent, Read, Failed }
+
+fun tickOf(m: Msg, c: Conv, me: String): Tick {
+    if (m.failed) return Tick.Failed
+    if (m.pending) return Tick.Pending
+    if (!c.isGroup) return if (m.readAt != null) Tick.Read else Tick.Sent
     val others = c.members.filter { it.id != me && it.joinedAt <= m.ts }
-    if (others.isEmpty() || others.any { it.lastRead == null }) return "✓"
-    return if (others.all { (it.lastRead ?: 0) >= m.ts }) "✓✓" else "✓"
+    if (others.isEmpty() || others.any { it.lastRead == null }) return Tick.Sent
+    return if (others.all { (it.lastRead ?: 0) >= m.ts }) Tick.Read else Tick.Sent
+}
+
+@Composable
+private fun TickIcon(t: Tick) {
+    val (icon, tint) = when (t) {
+        Tick.Pending -> Icons.Filled.Schedule to MaterialTheme.colorScheme.onSurfaceVariant
+        Tick.Sent -> Icons.Filled.Done to MaterialTheme.colorScheme.onSurfaceVariant
+        Tick.Read -> Icons.Filled.DoneAll to MaterialTheme.colorScheme.primary
+        Tick.Failed -> Icons.Filled.ErrorOutline to MaterialTheme.colorScheme.error
+    }
+    Icon(icon, null, Modifier.size(15.dp), tint = tint)
 }
 
 @Composable
 fun MessageBubble(
     repo: Repo, m: Msg, d: Dec?, conv: Conv, reactions: Map<String, String>, edited: String?,
-    showSender: Boolean, a: BubbleActions,
+    showSender: Boolean, a: BubbleActions, animateIn: Boolean = false,
 ) {
     val mine = m.from == repo.myId
+    val haptics = rememberHaptics()
     var menu by remember { mutableStateOf(false) }
     val payload = if (edited != null && d?.payload != null) JSONObject(d.payload.toString()).put("body", edited) else d?.payload
     val bg = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
-    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp), horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start) {
-        Box {
-            Column(
-                Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(bg)
-                    .combinedClickable(onClick = { if (m.failed) a.onRetry() }, onLongClick = { if (m.deletedAt == null) menu = true })
-                    .padding(horizontal = 10.dp, vertical = 6.dp),
-            ) {
-                if (showSender && !mine) Text(repo.nameOf(m.from), style = MaterialTheme.typography.labelMedium, color = hueColor(repo.nameOf(m.from)))
-                when {
-                    m.deletedAt != null -> Text("🚫 Diese Nachricht wurde gelöscht.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    m.viewOnce && !mine -> ViewOnce(repo, m, a)
-                    m.viewOnce && mine -> Text("🔒 Einmalansicht" + if (m.viewedAt != null) " (geöffnet)" else "", style = MaterialTheme.typography.bodyMedium)
-                    d == null -> Text("🔒 wird entschlüsselt …", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    d.error != null -> Text("⚠ ${d.error}", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.error)
-                    payload != null -> PayloadContent(repo, payload, a)
+    val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val shape = if (mine) RoundedCornerShape(22.dp, 22.dp, 6.dp, 22.dp) else RoundedCornerShape(22.dp, 22.dp, 22.dp, 6.dp)
+
+    // Erscheinen: neue Nachrichten federn leicht ein
+    val appear = remember { Animatable(if (animateIn) 0f else 1f) }
+    LaunchedEffect(Unit) { if (animateIn) appear.animateTo(1f, spring(dampingRatio = 0.6f, stiffness = 380f)) }
+    LaunchedEffect(m.failed) { if (m.failed) haptics.reject() }
+
+    // Wischen nach rechts = Antworten
+    val maxSwipe = with(LocalDensity.current) { 72.dp.toPx() }
+    val threshold = maxSwipe * 0.8f
+    var dragX by remember { mutableFloatStateOf(0f) }
+    var dragging by remember { mutableStateOf(false) }
+    var crossed by remember { mutableStateOf(false) }
+    val shownX by animateFloatAsState(
+        targetValue = if (dragging) dragX else 0f,
+        animationSpec = if (dragging) snap() else spring(dampingRatio = 0.55f, stiffness = 420f), label = "swipe",
+    )
+    val canSwipe = m.deletedAt == null && !m.viewOnce && d?.payload != null
+
+    Box(Modifier.fillMaxWidth()) {
+        if (shownX > 6f) {
+            val f = (shownX / maxSwipe).coerceIn(0f, 1f)
+            Icon(
+                Icons.AutoMirrored.Filled.Reply, null,
+                Modifier.align(Alignment.CenterStart).padding(start = 16.dp).size(24.dp).graphicsLayer { alpha = f; scaleX = 0.6f + 0.4f * f; scaleY = 0.6f + 0.4f * f },
+                tint = MaterialTheme.colorScheme.primary,
+            )
+        }
+        Row(
+            Modifier.fillMaxWidth()
+                .graphicsLayer {
+                    translationX = shownX
+                    val sc = 0.9f + 0.1f * appear.value
+                    scaleX = sc; scaleY = sc; alpha = appear.value.coerceIn(0f, 1f)
+                    transformOrigin = androidx.compose.ui.graphics.TransformOrigin(if (mine) 1f else 0f, 1f)
                 }
-                Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    if (edited != null) Text("bearbeitet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(fmtTime(m.ts), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    if (mine) Text(
-                        readTick(m, conv, repo.myId), style = MaterialTheme.typography.labelSmall,
-                        color = if (readTick(m, conv, repo.myId) == "✓✓") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                .pointerInput(canSwipe) {
+                    if (canSwipe) detectHorizontalDragGestures(
+                        onDragStart = { dragging = true; crossed = false; dragX = 0f },
+                        onDragEnd = { if (dragX >= threshold) a.onReply(); dragging = false },
+                        onDragCancel = { dragging = false },
+                        onHorizontalDrag = { change, dx ->
+                            change.consume()
+                            dragX = (dragX + dx * 0.55f).coerceIn(0f, maxSwipe)
+                            if (!crossed && dragX >= threshold) { crossed = true; haptics.gesture() }
+                            else if (crossed && dragX < threshold * 0.7f) crossed = false
+                        },
                     )
                 }
-                if (m.failed) Text("Nicht gesendet – tippen zum erneuten Senden", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
-                if (reactions.isNotEmpty()) {
-                    val grouped = reactions.values.filter { it.isNotEmpty() }.groupingBy { it }.eachCount()
-                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
-                        for ((e, n) in grouped) Text(
-                            if (n > 1) "$e $n" else e, style = MaterialTheme.typography.labelMedium,
-                            modifier = Modifier.clip(RoundedCornerShape(10.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)).padding(horizontal = 6.dp, vertical = 1.dp),
+                .padding(horizontal = 8.dp, vertical = 2.dp),
+            horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
+        ) {
+            Box {
+                Column(
+                    Modifier.widthIn(max = 300.dp).clip(shape).background(bg).animateContentSize(spring(stiffness = 500f))
+                        .combinedClickable(
+                            onClick = { if (m.failed) a.onRetry() },
+                            onLongClick = { if (m.deletedAt == null && !m.viewOnce) { haptics.longPress(); menu = true } },
                         )
+                        .padding(horizontal = 12.dp, vertical = 7.dp),
+                ) {
+                    if (showSender && !mine) Text(repo.nameOf(m.from), style = MaterialTheme.typography.labelMedium, color = hueColor(repo.nameOf(m.from)))
+                    when {
+                        m.deletedAt != null -> IconText(Icons.Filled.Block, "Diese Nachricht wurde gelöscht.", muted)
+                        m.viewOnce && !mine -> ViewOnce(repo, m)
+                        m.viewOnce && mine -> IconText(Icons.Filled.LooksOne, "Einmalansicht" + if (m.viewedAt != null) " (geöffnet)" else "")
+                        d == null -> IconText(Icons.Filled.Lock, "wird entschlüsselt …", muted)
+                        d.error != null -> IconText(Icons.Filled.Warning, d.error, MaterialTheme.colorScheme.error)
+                        payload != null -> PayloadContent(repo, payload, a)
+                    }
+                    Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        if (edited != null) Text("bearbeitet", style = MaterialTheme.typography.labelSmall, color = muted)
+                        Text(fmtTime(m.ts), style = MaterialTheme.typography.labelSmall, color = muted)
+                        if (mine) AnimatedContent(
+                            targetState = tickOf(m, conv, repo.myId),
+                            transitionSpec = { (scaleIn(spring(dampingRatio = 0.5f)) + fadeIn()) togetherWith (scaleOut() + fadeOut()) },
+                            label = "tick",
+                        ) { TickIcon(it) }
+                    }
+                    if (m.failed) Text("Nicht gesendet – tippen zum erneuten Senden", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
+                    if (reactions.isNotEmpty()) {
+                        val grouped = reactions.values.filter { it.isNotEmpty() }.groupingBy { it }.eachCount()
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
+                            for ((e, n) in grouped) Text(
+                                if (n > 1) "$e $n" else e, style = MaterialTheme.typography.labelMedium,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)).padding(horizontal = 7.dp, vertical = 2.dp),
+                            )
+                        }
                     }
                 }
-            }
-            DropdownMenu(menu, { menu = false }) {
-                Row(Modifier.padding(horizontal = 8.dp)) { for (e in REACTIONS) TextButton({ menu = false; a.onReact(e) }) { Text(e) } }
-                DropdownMenuItem({ Text("Antworten") }, { menu = false; a.onReply() })
-                a.onCopy?.let { DropdownMenuItem({ Text("Text kopieren") }, { menu = false; it() }) }
-                a.onEdit?.let { DropdownMenuItem({ Text("Bearbeiten") }, { menu = false; it() }) }
-                payload?.optJSONObject("file")?.let { f ->
-                    DropdownMenuItem({ Text("Speichern …") }, { menu = false; a.onSave(FileMeta.from(f)) })
+                DropdownMenu(menu, { menu = false }) {
+                    Row(Modifier.padding(horizontal = 8.dp)) { for (e in REACTIONS) TextButton({ menu = false; haptics.tick(); a.onReact(e) }) { Text(e) } }
+                    DropdownMenuItem({ Text("Antworten") }, { menu = false; a.onReply() })
+                    a.onCopy?.let { DropdownMenuItem({ Text("Text kopieren") }, { menu = false; it() }) }
+                    a.onEdit?.let { DropdownMenuItem({ Text("Bearbeiten") }, { menu = false; it() }) }
+                    payload?.optJSONObject("file")?.let { f ->
+                        DropdownMenuItem({ Text("Speichern …") }, { menu = false; a.onSave(FileMeta.from(f)) })
+                    }
+                    a.onDelete?.let { DropdownMenuItem({ Text("Für alle löschen") }, { menu = false; haptics.reject(); it() }) }
                 }
-                a.onDelete?.let { DropdownMenuItem({ Text("Für alle löschen") }, { menu = false; it() }) }
             }
         }
     }
@@ -156,11 +289,11 @@ private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions) {
             Text(r.optString("snippet"), style = MaterialTheme.typography.bodySmall, maxLines = 2)
         }
     }
-    if (p.optBoolean("fwd")) Text("↪ Weitergeleitet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    if (p.optBoolean("fwd")) Text("Weitergeleitet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     when (p.optString("t")) {
         "text" -> LinkText(p.optString("body"))
         "image" -> ImageContent(repo, p, a)
-        "file" -> FileContent(repo, FileMeta.from(p.getJSONObject("file")), a)
+        "file" -> FileContent(FileMeta.from(p.getJSONObject("file")), a)
         "voice" -> VoiceContent(repo, p)
         else -> Text("Nicht unterstützte Nachricht", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -189,14 +322,6 @@ private fun thumbOf(p: JSONObject): Bitmap? = try {
     if (i < 0) null else Base64.decode(s.substring(i + 7), Base64.DEFAULT).let { BitmapFactory.decodeByteArray(it, 0, it.size) }
 } catch (e: Exception) { null }
 
-fun decodeSampled(path: String, max: Int): Bitmap? {
-    val o = BitmapFactory.Options().apply { inJustDecodeBounds = true }
-    BitmapFactory.decodeFile(path, o)
-    var s = 1
-    while (maxOf(o.outWidth, o.outHeight) / s > max) s *= 2
-    return BitmapFactory.decodeFile(path, BitmapFactory.Options().apply { inSampleSize = s })
-}
-
 @Composable
 private fun ImageContent(repo: Repo, p: JSONObject, a: BubbleActions) {
     val meta = remember(p) { FileMeta.from(p.getJSONObject("file")) }
@@ -214,9 +339,9 @@ private fun ImageContent(repo: Repo, p: JSONObject, a: BubbleActions) {
 }
 
 @Composable
-private fun FileContent(repo: Repo, f: FileMeta, a: BubbleActions) {
+private fun FileContent(f: FileMeta, a: BubbleActions) {
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("📎", style = MaterialTheme.typography.headlineSmall)
+        Icon(Icons.Filled.InsertDriveFile, null, Modifier.size(28.dp), tint = MaterialTheme.colorScheme.primary)
         Column(Modifier.weight(1f, fill = false)) {
             Text(f.name, style = MaterialTheme.typography.bodyLarge, maxLines = 2)
             Text(fmtBytes(f.size), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -225,38 +350,83 @@ private fun FileContent(repo: Repo, f: FileMeta, a: BubbleActions) {
     }
 }
 
+// ---------------------------------------------------------------- Einmalansicht (Empfänger)
 @Composable
-private fun ViewOnce(repo: Repo, m: Msg, a: BubbleActions) {
+private fun ViewOnce(repo: Repo, m: Msg) {
     val scope = rememberCoroutineScope()
-    var state by remember { mutableStateOf(if (m.viewedAt != null) "done" else "ready") }
+    val haptics = rememberHaptics()
+    var confirm by remember { mutableStateOf(false) }
+    var loading by remember { mutableStateOf(false) }
+    var opened by remember { mutableStateOf(false) }
+    var content by remember { mutableStateOf<Repo.ViewOnceContent?>(null) }
     var err by remember { mutableStateOf<String?>(null) }
-    if (state == "done") { Text("🔒 Einmalansicht – bereits geöffnet", style = MaterialTheme.typography.bodyMedium); return }
-    Column {
-        Text("🔒 Einmalansicht", style = MaterialTheme.typography.bodyLarge)
-        err?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
-        TextButton({
-            scope.launch {
-                val d = repo.openViewOnce(m)
-                val p = d.payload
-                if (p == null) { err = d.error ?: "Nicht lesbar"; return@launch }
-                state = "done"
-                if (p.optString("t") == "image") {
-                    val meta = FileMeta.from(p.getJSONObject("file"))
-                    try {
-                        val f = repo.getFile(meta)
-                        decodeSampled(f.absolutePath, 2000)?.let(a.onOpenImage)
-                        f.delete()
-                    } catch (e: Exception) { err = e.message }
-                } else err = previewTextSafe(p)
-            }
-        }) { Text("Öffnen (nur einmal sichtbar)") }
+
+    if (m.viewedAt != null && content == null) {
+        IconText(Icons.Filled.LooksOne, "Einmalansicht – bereits geöffnet", MaterialTheme.colorScheme.onSurfaceVariant)
+    } else if (content == null) {
+        Column {
+            IconText(Icons.Filled.LooksOne, "Einmalansicht", style = MaterialTheme.typography.bodyLarge)
+            err?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelSmall) }
+            if (loading) CircularProgressIndicator(Modifier.padding(8.dp).size(22.dp), strokeWidth = 2.dp)
+            else TextButton({ confirm = true }, enabled = !opened) { Text("Öffnen") }
+        }
+    }
+    if (confirm) AlertDialog(
+        onDismissRequest = { confirm = false },
+        title = { Text("Einmalansicht öffnen?") },
+        text = { Text("Du kannst den Inhalt nur jetzt ansehen. Beim Öffnen wird er vom Server gelöscht und beim Schließen auch von diesem Gerät. Bitte respektiere die Privatsphäre des Absenders. Screenshots sind in dieser Ansicht gesperrt.") },
+        confirmButton = {
+            TextButton({
+                confirm = false; loading = true; err = null
+                scope.launch {
+                    try { content = repo.openViewOnce(m); opened = true; haptics.confirm() } catch (e: Exception) { err = e.message ?: "Öffnen fehlgeschlagen"; haptics.reject() }
+                    loading = false
+                }
+            }) { Text("Öffnen") }
+        },
+        dismissButton = { TextButton({ confirm = false }) { Text("Abbrechen") } },
+    )
+    content?.let { c ->
+        ViewOnceViewer(repo, c) { content = null; c.image?.recycle() }
     }
 }
 
-private fun previewTextSafe(p: JSONObject) = de.cracky.vela.data.previewText(p)
+@Composable
+private fun ViewOnceViewer(repo: Repo, c: Repo.ViewOnceContent, onClose: () -> Unit) {
+    Dialog(
+        onDismissRequest = onClose,
+        properties = DialogProperties(usePlatformDefaultWidth = false, securePolicy = SecureFlagPolicy.SecureOn),
+    ) {
+        Box(Modifier.fillMaxSize().background(Color.Black)) {
+            val img = c.image
+            if (img != null) {
+                Image(img.asImageBitmap(), "Einmalansicht", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
+            } else {
+                Column(Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.Center) {
+                    Text(c.text.orEmpty(), color = Color.White, style = MaterialTheme.typography.headlineSmall)
+                }
+            }
+            Row(Modifier.fillMaxWidth().padding(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    Modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x66000000)).padding(horizontal = 10.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Icon(Icons.Filled.LooksOne, null, Modifier.size(16.dp), tint = Color.White)
+                    Text("Einmalansicht – wird beim Schließen gelöscht", color = Color.White, style = MaterialTheme.typography.labelMedium)
+                }
+                Box(Modifier.weight(1f))
+                IconButton(onClose) { Icon(Icons.Filled.Close, "Schließen", tint = Color.White) }
+            }
+            c.caption?.let { Text(it, color = Color.White, modifier = Modifier.align(Alignment.BottomCenter).padding(24.dp)) }
+        }
+    }
+}
 
+// ---------------------------------------------------------------- Sprachnachricht
 @Composable
 private fun VoiceContent(repo: Repo, p: JSONObject) {
+    val ctx = LocalContext.current
+    val haptics = rememberHaptics()
     val meta = remember(p) { FileMeta.from(p.getJSONObject("file")) }
     val duration = p.optDouble("duration", 0.0)
     val waveArr = p.optJSONArray("wave")
@@ -265,7 +435,28 @@ private fun VoiceContent(repo: Repo, p: JSONObject) {
     var loading by remember { mutableStateOf(false) }
     var pos by remember { mutableStateOf(0f) }
     var player by remember { mutableStateOf<MediaPlayer?>(null) }
+    var running by remember { mutableStateOf(false) }
+    var consent by remember { mutableStateOf(false) }
+    var terr by remember { mutableStateOf<String?>(null) }
+    val transcripts by repo.transcripts.collectAsState()
+    val transcript = transcripts[meta.id]
     val scope = rememberCoroutineScope()
+
+    fun runTranscription() {
+        running = true; terr = null
+        scope.launch {
+            try { repo.transcribe(meta); haptics.confirm() } catch (e: Exception) { terr = e.message ?: "Transkription fehlgeschlagen"; haptics.reject() }
+            running = false
+        }
+    }
+    val micPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { runTranscription() }
+    fun startTranscription() {
+        val needMic = repo.store.transcribeEngine != "server" && android.os.Build.VERSION.SDK_INT >= 33
+        if (needMic && androidx.core.content.ContextCompat.checkSelfPermission(ctx, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        } else runTranscription()
+    }
+
     DisposableEffect(Unit) { onDispose { player?.release() } }
     LaunchedEffect(playing) {
         while (playing) {
@@ -273,34 +464,69 @@ private fun VoiceContent(repo: Repo, p: JSONObject) {
             delay(100)
         }
     }
-    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        TextButton({
-            scope.launch {
-                val pl = player
-                if (pl != null) {
-                    if (pl.isPlaying) { pl.pause(); playing = false } else { pl.start(); playing = true }
-                    return@launch
+    Column {
+        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            FilledTonalIconButton(
+                onClick = {
+                    haptics.tick()
+                    scope.launch {
+                        val pl = player
+                        if (pl != null) {
+                            if (pl.isPlaying) { pl.pause(); playing = false } else { pl.start(); playing = true }
+                            return@launch
+                        }
+                        loading = true
+                        try {
+                            val f = repo.getFile(meta)
+                            val np = MediaPlayer()
+                            np.setDataSource(f.absolutePath)
+                            np.prepare()
+                            np.setOnCompletionListener { playing = false; pos = 0f; it.seekTo(0) }
+                            player = np; np.start(); playing = true
+                        } catch (e: Exception) { repo.say("Wiedergabe nicht möglich: ${e.message}") }
+                        loading = false
+                    }
+                },
+                modifier = Modifier.size(40.dp),
+            ) {
+                if (loading) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+                else Icon(if (playing) Icons.Filled.Pause else Icons.Filled.PlayArrow, if (playing) "Pause" else "Abspielen")
+            }
+            Row(Modifier.height(32.dp).widthIn(max = 130.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                wave.forEachIndexed { i, v ->
+                    Box(
+                        Modifier.width(2.dp).height((6 + v.coerceIn(0f, 1f) * 24).dp)
+                            .background(if (i < pos * wave.size) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
+                    )
                 }
-                loading = true
-                try {
-                    val f = repo.getFile(meta)
-                    val np = MediaPlayer()
-                    np.setDataSource(f.absolutePath)
-                    np.prepare()
-                    np.setOnCompletionListener { playing = false; pos = 0f; it.seekTo(0) }
-                    player = np; np.start(); playing = true
-                } catch (e: Exception) { repo.say("Wiedergabe nicht möglich: ${e.message}") }
-                loading = false
             }
-        }) { Text(if (loading) "…" else if (playing) "⏸" else "▶", style = MaterialTheme.typography.titleLarge) }
-        Row(Modifier.height(32.dp).widthIn(max = 160.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-            wave.forEachIndexed { i, v ->
-                Box(
-                    Modifier.width(2.dp).height((6 + v.coerceIn(0f, 1f) * 24).dp)
-                        .background(if (i < pos * wave.size) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline),
-                )
-            }
+            Text(fmtDuration(duration), style = MaterialTheme.typography.labelSmall)
+            if (running) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
+            else if (transcript == null) IconButton({
+                if (repo.store.transcribeEnabled) startTranscription() else consent = true
+            }, Modifier.size(36.dp)) { Icon(Icons.Filled.Subtitles, "Transkribieren") }
         }
-        Text(fmtDuration(duration), style = MaterialTheme.typography.labelSmall)
+        terr?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
+        transcript?.let {
+            Text(
+                if (repo.store.transcribeEngine == "server") "Transkript – vom eigenen Whisper-Server" else "Transkript – auf dem Gerät erstellt",
+                style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(top = 4.dp),
+            )
+            Text(it, style = MaterialTheme.typography.bodyMedium)
+        }
     }
+    if (consent) AlertDialog(
+        onDismissRequest = { consent = false },
+        title = { Text("Transkription aktivieren?") },
+        text = {
+            Text(
+                if (repo.store.transcribeEngine == "server")
+                    "Das entschlüsselte Audio wird zur Umwandlung an deinen eigenen Whisper-Server gesendet (${repo.store.whisperUrl.ifBlank { "noch nicht eingetragen – bitte unter Einstellungen ▸ Transkription angeben" }}). Es wird nicht an Vela zurückgespeichert."
+                else
+                    "Sprachnachrichten werden mit der Offline-Spracherkennung deines Geräts in Text umgewandelt. Das Audio verlässt das Gerät nicht. Android verlangt dafür die Mikrofon-Berechtigung.",
+            )
+        },
+        confirmButton = { TextButton({ consent = false; repo.store.transcribeEnabled = true; startTranscription() }) { Text("Aktivieren") } },
+        dismissButton = { TextButton({ consent = false }) { Text("Abbrechen") } },
+    )
 }

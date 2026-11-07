@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="ic_launcher_background">#1A1007</color>
+    <string name="app_name">Vela</string>
+    <style name="Theme.Vela" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#FFFFF8F4</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

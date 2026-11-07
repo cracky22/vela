@@ -102,6 +102,20 @@ class Api(private val prefs: SharedPreferences) {
         }
     }
 
+    /** Sendet rohe Bytes (z. B. JPEG-Profilbild). */
+    suspend fun postRaw(path: String, bytes: ByteArray, contentType: String): JSONObject = withContext(Dispatchers.IO) {
+        val req = Request.Builder().url(url(path)).header("X-Requested-With", "vela").post(bytes.toRequestBody(contentType.toMediaType())).build()
+        try {
+            client.newCall(req).execute().use { res ->
+                val text = res.body?.string().orEmpty()
+                if (!res.isSuccessful) throw ApiError(res.code, detail(text, "Fehler ${res.code}"))
+                if (text.isBlank()) JSONObject() else JSONObject(text)
+            }
+        } catch (e: IOException) {
+            throw ApiError(0, "Keine Verbindung zum Server")
+        }
+    }
+
     suspend fun obj(path: String, method: String = "GET", body: JSONObject? = null): JSONObject =
         call(path, method, body) as? JSONObject ?: JSONObject()
 

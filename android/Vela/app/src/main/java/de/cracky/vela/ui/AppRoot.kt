@@ -1,6 +1,18 @@
 package de.cracky.vela.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.animation.togetherWith
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -63,10 +75,31 @@ fun AppRoot(repo: Repo, pendingConv: MutableStateFlow<String?>) {
                     BackHandler(enabled = active != null || screen != Screen.List) {
                         if (screen != Screen.List) screen = Screen.List else repo.closeChat()
                     }
-                    when {
-                        screen == Screen.Settings -> SettingsScreen(repo) { screen = Screen.List }
-                        active != null -> ChatScreen(repo, active!!) { repo.closeChat() }
-                        else -> ChatListScreen(repo, onSettings = { screen = Screen.Settings })
+                    val dest = when {
+                        screen == Screen.Settings -> "settings"
+                        active != null -> "chat:$active"
+                        else -> "list"
+                    }
+                    AnimatedContent(
+                        targetState = dest,
+                        transitionSpec = {
+                            val forward = (if (targetState == "list") 0 else 1) > (if (initialState == "list") 0 else 1)
+                            val spec = spring<IntOffset>(dampingRatio = 0.9f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold)
+                            if (forward) {
+                                (slideInHorizontally(spec) { it / 3 } + fadeIn(tween(220))) togetherWith
+                                    (slideOutHorizontally(spec) { -it / 6 } + fadeOut(tween(160)))
+                            } else {
+                                (slideInHorizontally(spec) { -it / 6 } + fadeIn(tween(220))) togetherWith
+                                    (slideOutHorizontally(spec) { it / 3 } + fadeOut(tween(160)))
+                            }
+                        },
+                        label = "navigation",
+                    ) { d ->
+                        when {
+                            d == "settings" -> SettingsScreen(repo) { screen = Screen.List }
+                            d.startsWith("chat:") -> ChatScreen(repo, d.removePrefix("chat:")) { repo.closeChat() }
+                            else -> ChatListScreen(repo, onSettings = { screen = Screen.Settings })
+                        }
                     }
                 }
             }
@@ -80,13 +113,21 @@ enum class Screen { List, Settings }
 @Composable
 private fun BannerBar(repo: Repo) {
     val b by repo.banner.collectAsState()
-    if (b.kind == Banner.Kind.None) return
-    val (bg, fg) = when (b.kind) {
+    val last = remember { arrayOf(b) }
+    if (b.kind != Banner.Kind.None) last[0] = b
+    val shown = last[0]
+    val (bg, fg) = when (shown.kind) {
         Banner.Kind.Maintenance -> Color(0xFFFFE9A8) to Color(0xFF2A2000)
         Banner.Kind.Offline -> MaterialTheme.colorScheme.errorContainer to MaterialTheme.colorScheme.onErrorContainer
         else -> Color(0xFFD1ECA0) to Color(0xFF121F00)
     }
-    Row(Modifier.fillMaxWidth().background(bg).padding(horizontal = 16.dp, vertical = 6.dp)) {
-        Text(b.text, color = fg, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
+    AnimatedVisibility(
+        visible = b.kind != Banner.Kind.None,
+        enter = expandVertically(spring(stiffness = 500f)) + fadeIn(),
+        exit = shrinkVertically(spring(stiffness = 500f)) + fadeOut(),
+    ) {
+        Row(Modifier.fillMaxWidth().background(bg).padding(horizontal = 16.dp, vertical = 6.dp)) {
+            Text(shown.text, color = fg, modifier = Modifier.fillMaxWidth(), textAlign = TextAlign.Center, style = MaterialTheme.typography.labelLarge)
+        }
     }
 }

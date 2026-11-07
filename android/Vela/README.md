@@ -23,3 +23,20 @@ Fertige APK: `Build ▸ Build Bundle(s)/APK(s) ▸ Build APK(s)` → `app/build/
   sonst mit dem Wiederherstellungsschlüssel.
 * Benachrichtigungen ohne Google-Dienste: ein Vordergrunddienst hält die WebSocket-Verbindung offen
   (Einstellungen ▸ „Im Hintergrund verbunden bleiben“). Bei aggressiver Akku-Optimierung die App ausnehmen.
+
+## Neu in dieser Version
+
+* **Einmalansicht** (Foto und Text) senden und empfangen – Schalter „1“ neben dem Eingabefeld. Die Ansicht ist gegen Screenshots gesperrt.
+* **Profilbild** und **Gruppenbild** ändern (Einstellungen ▸ Avatar antippen bzw. Gruppeninfo).
+* **Transkription** von Sprachnachrichten (Untertitel-Symbol an der Sprachnachricht):
+  * *Auf dem Gerät*: Offline-Spracherkennung von Android (ab Android 13, Offline-Sprachdaten nötig).
+  * *Eigener Whisper-Server*: OpenAI-kompatibel (`POST /v1/audio/transcriptions`), in den Einstellungen eintragen.
+* Material-Symbole (Google) statt Emojis für Wiedergabe, Aufnahme, Anhänge, Häkchen usw.
+
+## Bedienung & Optik
+
+* **Antworten aus der Benachrichtigung**: Konversations-Benachrichtigung mit Antwortfeld und „Als gelesen markieren“.
+* **Animationen**: federnde Nachrichten, animierte Häkchen, Tipp-Punkte, Mikrofon↔Senden-Morph, Seitenwechsel, einklappende Kopfzeile.
+* **Wischen nach rechts** auf einer Nachricht = Antworten.
+* **Haptisches Feedback** (Einstellungen ▸ Bedienung abschaltbar).
+* Optik im Stil von Material 3 Expressive (große Rundungen, kräftige Schriften, Chips, ausfahrender FAB).

@@ -11,6 +11,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.PhotoCamera
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -49,15 +55,40 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
     var bg by remember { mutableStateOf(repo.store.background) }
     var notif by remember { mutableStateOf(repo.store.notifications) }
     var confirmWipe by remember { mutableStateOf(false) }
+    val pickAvatar = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) repo.bg { repo.setAvatar(uri); repo.say("Profilbild aktualisiert") }
+    }
+    var hapticsOn by remember { mutableStateOf(repo.store.haptics) }
+    var trEnabled by remember { mutableStateOf(repo.store.transcribeEnabled) }
+    var trEngine by remember { mutableStateOf(repo.store.transcribeEngine) }
+    var trUrl by remember { mutableStateOf(repo.store.whisperUrl) }
+    var trKey by remember { mutableStateOf(repo.store.whisperKey) }
+    var trModel by remember { mutableStateOf(repo.store.whisperModel) }
+    var trLang by remember { mutableStateOf(repo.store.transcribeLang) }
     val s = m.settings
     fun save(n: de.cracky.vela.data.Settings) = scope.launch { try { repo.saveSettings(n) } catch (e: Exception) { repo.say(e.message ?: "Fehler") } }
 
     Scaffold(topBar = { TopAppBar(title = { Text("Einstellungen") }, navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } }) }) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                Avatar(repo, m.id, false, m.avatarVersion, m.username, 64.dp)
+                Box(Modifier.clickable { pickAvatar.launch("image/*") }) {
+                    Avatar(repo, m.id, false, m.avatarVersion, m.username, 72.dp)
+                    Icon(
+                        Icons.Filled.PhotoCamera, "Profilbild ändern",
+                        Modifier.align(Alignment.BottomEnd).size(26.dp).background(MaterialTheme.colorScheme.primary, CircleShape).padding(5.dp),
+                        tint = MaterialTheme.colorScheme.onPrimary,
+                    )
+                }
                 Column { Text(m.username, style = MaterialTheme.typography.titleLarge); Text(m.email, style = MaterialTheme.typography.bodySmall) }
             }
+            Row {
+                TextButton({ pickAvatar.launch("image/*") }) { Text("Profilbild ändern") }
+                if (m.avatarVersion > 0) TextButton({ repo.bg { repo.removeAvatar(); repo.say("Profilbild entfernt") } }) { Text("Entfernen") }
+            }
+            Text(
+                "Profilbilder sind nicht Ende-zu-Ende-verschlüsselt und werden nur an angenommene Kontakte und Gruppenmitglieder ausgeliefert.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(about, { about = it.take(140) }, label = { Text("Info (öffentlich für Kontakte)") }, modifier = Modifier.fillMaxWidth())
             if (about != m.about) Button({ scope.launch { try { repo.saveAbout(about) } catch (e: Exception) { repo.say(e.message ?: "Fehler") } } }) { Text("Info speichern") }
             HorizontalDivider()
@@ -71,6 +102,9 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
             )
             SwitchRow("Online-Status zeigen", s.showOnline) { save(s.copy(showOnline = it)) }
             HorizontalDivider()
+            Text("Bedienung", style = MaterialTheme.typography.titleMedium)
+            SwitchRow("Haptisches Feedback (Vibrationen)", hapticsOn) { hapticsOn = it; repo.store.haptics = it }
+            HorizontalDivider()
             Text("Benachrichtigungen", style = MaterialTheme.typography.titleMedium)
             SwitchRow("Benachrichtigungen anzeigen", notif) { notif = it; repo.store.notifications = it }
             SwitchRow("Im Hintergrund verbunden bleiben", bg) { bg = it; repo.setBackground(it) }
@@ -78,6 +112,30 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
                 "Vela nutzt keine Google-Dienste. Solange die App geöffnet ist, gibt es keine Dienst-Benachrichtigung. Im Hintergrund hält ein Dienst die Verbindung offen – Android verlangt dafür eine Benachrichtigung; sie ist stumm, ohne Symbol in der Statusleiste und auf dem Sperrbildschirm unsichtbar.",
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            HorizontalDivider()
+            Text("Transkription von Sprachnachrichten", style = MaterialTheme.typography.titleMedium)
+            SwitchRow("Transkription aktivieren", trEnabled) { trEnabled = it; repo.store.transcribeEnabled = it }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { trEngine = "device"; repo.store.transcribeEngine = "device" }) {
+                androidx.compose.material3.RadioButton(trEngine == "device", null)
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Auf dem Gerät (Offline-Spracherkennung)")
+                    Text("Ab Android 13. Das Audio verlässt das Gerät nicht.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.clickable { trEngine = "server"; repo.store.transcribeEngine = "server" }) {
+                androidx.compose.material3.RadioButton(trEngine == "server", null)
+                Column(Modifier.padding(start = 12.dp)) {
+                    Text("Eigener Whisper-Server")
+                    Text("OpenAI-kompatible Schnittstelle (/v1/audio/transcriptions). Das Audio geht an diesen Server.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            if (trEngine == "server") {
+                OutlinedTextField(trUrl, { trUrl = it; repo.store.whisperUrl = it }, label = { Text("Server-Adresse, z. B. https://…/v1") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+                OutlinedTextField(trKey, { trKey = it; repo.store.whisperKey = it }, label = { Text("API-Schlüssel (optional)") }, singleLine = true, modifier = Modifier.fillMaxWidth(),
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation())
+                OutlinedTextField(trModel, { trModel = it; repo.store.whisperModel = it }, label = { Text("Modell (Standard: whisper-1)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
+            }
+            OutlinedTextField(trLang, { trLang = it; repo.store.transcribeLang = it }, label = { Text("Sprache (z. B. de, leer = automatisch)") }, singleLine = true, modifier = Modifier.fillMaxWidth())
             HorizontalDivider()
             Text("Schlüssel", style = MaterialTheme.typography.titleMedium)
             Text("RSA ${m.keyBits} Bit · Schlüsselversion ${m.keyVersion}")
@@ -99,8 +157,9 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
 
 @Composable
 private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit) {
+    val haptics = rememberHaptics()
     Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
         Text(label, Modifier.weight(1f))
-        Switch(value, onChange)
+        Switch(value, { haptics.toggle(it); onChange(it) })
     }
 }
