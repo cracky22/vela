@@ -2,3 +2,11 @@ venv/
 data/
 app/__pycache__/
 totp
+./android/Vela/*.iml
+./android/Vela/.gradle/
+./android/Vela/local.properties
+./android/Vela/.idea/
+./android/Vela/build/
+./android/Vela/app/build/
+./android/Vela/.DS_Store
+./android/Vela/captures/
