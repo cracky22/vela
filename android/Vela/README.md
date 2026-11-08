@@ -40,3 +40,11 @@ Fertige APK: `Build ▸ Build Bundle(s)/APK(s) ▸ Build APK(s)` → `app/build/
 * **Wischen nach rechts** auf einer Nachricht = Antworten.
 * **Haptisches Feedback** (Einstellungen ▸ Bedienung abschaltbar).
 * Optik im Stil von Material 3 Expressive (große Rundungen, kräftige Schriften, Chips, ausfahrender FAB).
+
+## Medien, Reaktionen, Verlauf
+
+* **Medien-Viewer** (Fotos und Videos eines Chats): wischen zum Blättern, Doppeltippen und Zwicken zum Zoomen, nach unten/oben ziehen zum Schließen, Teilen und Speichern. Videos laufen mit ExoPlayer.
+* **Videos** werden beim Senden erkannt (MIME-Typ oder Endung); die Nachricht enthält Vorschaubild, Dauer und Größe und erscheint wie bei WhatsApp als Player. Im Web-Client bleibt es eine normale Datei.
+* **Tapback**: Nachricht lange drücken → Reaktionsleiste (Daumen, Herz, … und „+“ für beliebige Emojis), darunter die Nachricht und die Aktionen. Auf die Reaktionen unter einer Nachricht tippen zeigt, wer womit reagiert hat.
+* **Verlauf lokal speichern** (Einstellungen ▸ Verlauf auf diesem Gerät): verschlüsselt im App-Speicher, auf Wunsch alle Nachrichten und Anhänge laden.
+* Textfarben folgen dem Theme (Hell/Dunkel), Nachrichtenblasen haben eigene Kontrastfarben.

@@ -58,6 +58,12 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
     val pickAvatar = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) repo.bg { repo.setAvatar(uri); repo.say("Profilbild aktualisiert") }
     }
+    var keepHistory by remember { mutableStateOf(repo.store.keepHistory) }
+    var keepMedia by remember { mutableStateOf(repo.store.keepMedia) }
+    val sync by repo.sync.collectAsState()
+    var localCount by remember { mutableStateOf(0) }
+    var confirmClear by remember { mutableStateOf(false) }
+    androidx.compose.runtime.LaunchedEffect(sync == null, keepHistory) { localCount = repo.localCount() }
     var hapticsOn by remember { mutableStateOf(repo.store.haptics) }
     var trEnabled by remember { mutableStateOf(repo.store.transcribeEnabled) }
     var trEngine by remember { mutableStateOf(repo.store.transcribeEngine) }
@@ -101,6 +107,23 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             SwitchRow("Online-Status zeigen", s.showOnline) { save(s.copy(showOnline = it)) }
+            HorizontalDivider()
+            Text("Verlauf auf diesem Gerät", style = MaterialTheme.typography.titleMedium)
+            SwitchRow("Nachrichten lokal speichern", keepHistory) { keepHistory = it; repo.store.keepHistory = it; if (it) repo.persistAllLoaded() }
+            Text(
+                "Entschlüsselte Nachrichten werden verschlüsselt (Android-Keystore) in der App gespeichert. Sie bleiben auch nach der Aufbewahrungsfrist des Servers lesbar und sind offline verfügbar.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SwitchRow("Anhänge mitspeichern (Fotos, Videos, Dateien)", keepMedia) { keepMedia = it; repo.store.keepMedia = it }
+            val st = sync
+            if (st != null) {
+                Text(st.text, style = MaterialTheme.typography.bodyMedium)
+                androidx.compose.material3.LinearProgressIndicator(progress = { st.progress }, modifier = Modifier.fillMaxWidth())
+            } else {
+                Button({ keepHistory = true; repo.bg { repo.syncHistory(keepMedia) } }, Modifier.fillMaxWidth()) { Text("Alle Nachrichten jetzt laden") }
+            }
+            Text("$localCount Nachrichten lokal gespeichert", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton({ confirmClear = true }) { Text("Lokalen Verlauf löschen", color = MaterialTheme.colorScheme.error) }
             HorizontalDivider()
             Text("Bedienung", style = MaterialTheme.typography.titleMedium)
             SwitchRow("Haptisches Feedback (Vibrationen)", hapticsOn) { hapticsOn = it; repo.store.haptics = it }
@@ -147,6 +170,12 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
             Text("com.crackyOS.vela · Android", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 24.dp))
         }
     }
+    if (confirmClear) AlertDialog(
+        onDismissRequest = { confirmClear = false }, title = { Text("Lokalen Verlauf löschen?") },
+        text = { Text("Alle auf diesem Gerät gespeicherten Nachrichten und Anhänge werden entfernt. Was der Server noch hat, lässt sich erneut laden.") },
+        confirmButton = { TextButton({ confirmClear = false; repo.bg { repo.clearLocalHistory(); localCount = repo.localCount() } }) { Text("Löschen", color = MaterialTheme.colorScheme.error) } },
+        dismissButton = { TextButton({ confirmClear = false }) { Text("Abbrechen") } },
+    )
     if (confirmWipe) AlertDialog(
         onDismissRequest = { confirmWipe = false }, title = { Text("Schlüssel entfernen?") },
         text = { Text("Danach brauchst du deinen Wiederherstellungsschlüssel (oder den Schlüsseltresor), um Nachrichten auf diesem Gerät wieder zu lesen.") },

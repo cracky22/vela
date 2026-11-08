@@ -56,6 +56,7 @@ import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LooksOne
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.AlertDialog
@@ -187,7 +188,9 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     var headerMenu by remember { mutableStateOf(false) }
     var info by remember { mutableStateOf(false) }
     var ttlDialog by remember { mutableStateOf(false) }
-    var viewer by remember { mutableStateOf<Bitmap?>(null) }
+    var overlayId by remember(convId) { mutableStateOf<String?>(null) }
+    var reactionsFor by remember(convId) { mutableStateOf<String?>(null) }
+    var mediaId by remember(convId) { mutableStateOf<String?>(null) }
     var recording by remember { mutableStateOf(false) }
     var recSecs by remember { mutableStateOf(0) }
     val recorder = remember { Recorder(ctx) }
@@ -201,6 +204,17 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     }
     val pickFile = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
         if (uri != null) repo.bg { repo.sendFile(convId, uri) }
+    }
+    val pickVideo = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null) repo.bg { repo.sendFile(convId, uri) }
+    }
+    fun shareMeta(meta: FileMeta) {
+        repo.bg {
+            val uri = repo.shareUri(meta)
+            val send = android.content.Intent(android.content.Intent.ACTION_SEND).setType(meta.mime).putExtra(android.content.Intent.EXTRA_STREAM, uri)
+                .addFlags(android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            ctx.startActivity(android.content.Intent.createChooser(send, "Teilen").addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
     }
     val saveAs = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("*/*")) { uri ->
         val meta = pendingSave
@@ -353,7 +367,9 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                                 },
                                 onSave = { meta -> pendingSave = meta; saveAs.launch(meta.name) },
                                 onRetry = { repo.bg { repo.retry(m) } },
-                                onOpenImage = { viewer = it },
+                                onOpenMedia = { mediaId = it },
+                                onLongPress = { overlayId = m.id },
+                                onShowReactions = { reactionsFor = m.id },
                                 onJump = { id -> val i = shown.indexOfFirst { it.id == id }; if (i >= 0) scope.launch { listState.animateScrollToItem(i) } },
                             ),
                         ) }
@@ -408,6 +424,8 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                         DropdownMenu(attachMenu, { attachMenu = false }) {
                             DropdownMenuItem({ Text(if (viewOnce) "Einmalansicht-Foto" else "Foto") }, { attachMenu = false; pickImage.launch("image/*") },
                                 leadingIcon = { Icon(Icons.Filled.Image, null) })
+                            DropdownMenuItem({ Text("Video") }, { attachMenu = false; pickVideo.launch("video/*") },
+                                leadingIcon = { Icon(Icons.Filled.Videocam, null) })
                             DropdownMenuItem({ Text("Datei") }, { attachMenu = false; pickFile.launch("*/*") },
                                 leadingIcon = { Icon(Icons.Filled.InsertDriveFile, null) })
                         }
@@ -441,12 +459,51 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
         }
     }
 
-    viewer?.let { b ->
-        Dialog({ viewer = null }, DialogProperties(usePlatformDefaultWidth = false)) {
-            Box(Modifier.fillMaxSize().background(Color.Black).clickable { viewer = null }, Alignment.Center) {
-                Image(b.asImageBitmap(), "Foto", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
-            }
+    // ---- Nachrichtenmenü (Tapback): langes Drücken -> Reaktionsleiste, Nachricht, Aktionen
+    val overlayMsg = overlayId?.let { id -> view.visible.firstOrNull { it.id == id } }
+    if (overlayMsg != null) {
+        val om = overlayMsg
+        val p = dec[om.id]?.payload
+        val mineMsg = om.from == repo.myId
+        val myReaction = view.reactions[om.id]?.get(repo.myId)
+        val fm = p?.optJSONObject("file")?.let { FileMeta.from(it) }
+        val actions = MenuActions(
+            onReact = { e -> repo.bg { repo.react(convId, om.id, if (myReaction == e) "" else e) } },
+            onReply = { if (p != null) { editing = null; reply = ReplyRef(om.id, om.from, previewText(p).take(100)) } },
+            onCopy = p?.takeIf { it.optString("t") == "text" }?.let { tp ->
+                {
+                    val cm = ctx.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    cm.setPrimaryClip(ClipData.newPlainText("Vela", view.edits[om.id] ?: tp.optString("body")))
+                    repo.say("Text kopiert")
+                }
+            },
+            onEdit = if (mineMsg && p?.optString("t") == "text" && !om.pending) ({
+                reply = null; editing = om; text = view.edits[om.id] ?: p?.optString("body").orEmpty()
+            }) else null,
+            onSave = fm?.let { f -> { pendingSave = f; saveAs.launch(f.name) } },
+            onShare = fm?.let { f -> { shareMeta(f) } },
+            onDelete = if (mineMsg || (conv.isGroup && conv.role == "admin")) ({ repo.bg { repo.deleteMessage(om) } }) else null,
+        )
+        MessageActionOverlay(repo, mineMsg, myReaction, actions, onDismiss = { overlayId = null }) {
+            MessageBubble(
+                repo, om, dec[om.id], conv, view.reactions[om.id].orEmpty(), view.edits[om.id], conv.isGroup,
+                BubbleActions({}, null, null, null, {}, {}, {}, {}, {}, {}, {}),
+            )
         }
+    }
+    reactionsFor?.let { id ->
+        val r = view.reactions[id].orEmpty()
+        ReactionsDialog(repo, r, onRemoveMine = { repo.bg { repo.react(convId, id, "") } }, onDismiss = { reactionsFor = null })
+    }
+    // ---- Medien-Viewer (Fotos und Videos des Chats, wischen, zoomen)
+    mediaId?.let { id ->
+        val items = collectMedia(view.visible, dec)
+        MediaViewer(
+            repo, items, items.indexOfFirst { it.msgId == id }.coerceAtLeast(0),
+            onSave = { meta -> pendingSave = meta; saveAs.launch(meta.name) },
+            onShare = { meta -> shareMeta(meta) },
+            onClose = { mediaId = null },
+        )
     }
     if (ttlDialog) {
         AlertDialog(

@@ -84,7 +84,7 @@ fun AppRoot(repo: Repo, pendingConv: MutableStateFlow<String?>) {
                         targetState = dest,
                         transitionSpec = {
                             val forward = (if (targetState == "list") 0 else 1) > (if (initialState == "list") 0 else 1)
-                            val spec = spring<IntOffset>(dampingRatio = 0.9f, stiffness = 420f, visibilityThreshold = IntOffset.VisibilityThreshold)
+                            val spec = spring<IntOffset>(dampingRatio = 0.9f, stiffness = 420f)
                             if (forward) {
                                 (slideInHorizontally(spec) { it / 3 } + fadeIn(tween(220))) togetherWith
                                     (slideOutHorizontally(spec) { -it / 6 } + fadeOut(tween(160)))

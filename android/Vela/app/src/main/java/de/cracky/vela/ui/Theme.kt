@@ -23,7 +23,10 @@ private val Light = lightColorScheme(
     background = Color(0xFFFFF8F4), surface = Color(0xFFFFF8F4), onSurface = Color(0xFF221A12),
     surfaceVariant = Color(0xFFF6E5D8), onSurfaceVariant = Color(0xFF56432F),
     outline = Color(0xFF8A735C), outlineVariant = Color(0xFFDDC2A8),
-    surfaceContainer = Color(0xFFFBEBDE), surfaceContainerHigh = Color(0xFFF6E5D8),
+    onBackground = Color(0xFF221A12),
+    surfaceContainerLowest = Color.White, surfaceContainerLow = Color(0xFFFFF1E6),
+    surfaceContainer = Color(0xFFFBEBDE), surfaceContainerHigh = Color(0xFFF6E5D8), surfaceContainerHighest = Color(0xFFF0DFD1),
+    inverseSurface = Color(0xFF382F26), inverseOnSurface = Color(0xFFFFEDE0), inversePrimary = Color(0xFFFFB869),
 )
 
 private val Dark = darkColorScheme(
@@ -36,7 +39,10 @@ private val Dark = darkColorScheme(
     background = Color(0xFF19120A), surface = Color(0xFF19120A), onSurface = Color(0xFFEDE0D4),
     surfaceVariant = Color(0xFF52443A), onSurfaceVariant = Color(0xFFD7C3B3),
     outline = Color(0xFF9F8D7E), outlineVariant = Color(0xFF52443A),
-    surfaceContainer = Color(0xFF261E16), surfaceContainerHigh = Color(0xFF30281F),
+    onBackground = Color(0xFFEDE0D4),
+    surfaceContainerLowest = Color(0xFF130D07), surfaceContainerLow = Color(0xFF211A12),
+    surfaceContainer = Color(0xFF261E16), surfaceContainerHigh = Color(0xFF30281F), surfaceContainerHighest = Color(0xFF3B332A),
+    inverseSurface = Color(0xFFEDE0D4), inverseOnSurface = Color(0xFF382F26), inversePrimary = Color(0xFFA46300),
 )
 
 // Ausdrucksstärkere Formen (großzügige Rundungen) und kräftigere Schriftschnitte im Stil von Material 3 Expressive
@@ -61,5 +67,12 @@ private val VelaType = Typography(
 
 @Composable
 fun VelaTheme(content: @Composable () -> Unit) {
-    MaterialTheme(colorScheme = if (isSystemInDarkTheme()) Dark else Light, shapes = VelaShapes, typography = VelaType, content = content)
+    val scheme = if (isSystemInDarkTheme()) Dark else Light
+    MaterialTheme(colorScheme = scheme, shapes = VelaShapes, typography = VelaType) {
+        // Ohne diese Vorgabe wäre die Standard-Textfarbe außerhalb von Surface/Scaffold schwarz – im Dunkelmodus unlesbar.
+        androidx.compose.runtime.CompositionLocalProvider(
+            androidx.compose.material3.LocalContentColor provides scheme.onBackground,
+            content = content,
+        )
+    }
 }

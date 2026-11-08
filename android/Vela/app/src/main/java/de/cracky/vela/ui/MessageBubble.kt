@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
@@ -117,8 +118,8 @@ private val URL_RE = Regex("""https?://[^\s<>"]+""")
 
 class BubbleActions(
     val onReply: () -> Unit, val onEdit: (() -> Unit)?, val onDelete: (() -> Unit)?, val onCopy: (() -> Unit)?,
-    val onReact: (String) -> Unit, val onSave: ((FileMeta) -> Unit), val onRetry: () -> Unit, val onOpenImage: (Bitmap) -> Unit,
-    val onJump: (String) -> Unit,
+    val onReact: (String) -> Unit, val onSave: ((FileMeta) -> Unit), val onRetry: () -> Unit, val onOpenMedia: (String) -> Unit,
+    val onJump: (String) -> Unit, val onLongPress: () -> Unit, val onShowReactions: () -> Unit,
 )
 
 /** Kleine Zeile aus Symbol und Text. */
@@ -169,7 +170,6 @@ fun MessageBubble(
 ) {
     val mine = m.from == repo.myId
     val haptics = rememberHaptics()
-    var menu by remember { mutableStateOf(false) }
     val payload = if (edited != null && d?.payload != null) JSONObject(d.payload.toString()).put("body", edited) else d?.payload
     val bg = if (mine) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceVariant
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
@@ -226,11 +226,14 @@ fun MessageBubble(
             horizontalArrangement = if (mine) Arrangement.End else Arrangement.Start,
         ) {
             Box {
+                androidx.compose.runtime.CompositionLocalProvider(
+                    LocalContentColor provides (if (mine) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant),
+                ) {
                 Column(
                     Modifier.widthIn(max = 300.dp).clip(shape).background(bg).animateContentSize(spring(stiffness = 500f))
                         .combinedClickable(
                             onClick = { if (m.failed) a.onRetry() },
-                            onLongClick = { if (m.deletedAt == null && !m.viewOnce) { haptics.longPress(); menu = true } },
+                            onLongClick = { if (m.deletedAt == null && !m.viewOnce) { haptics.longPress(); a.onLongPress() } },
                         )
                         .padding(horizontal = 12.dp, vertical = 7.dp),
                 ) {
@@ -241,7 +244,7 @@ fun MessageBubble(
                         m.viewOnce && mine -> IconText(Icons.Filled.LooksOne, "Einmalansicht" + if (m.viewedAt != null) " (geöffnet)" else "")
                         d == null -> IconText(Icons.Filled.Lock, "wird entschlüsselt …", muted)
                         d.error != null -> IconText(Icons.Filled.Warning, d.error, MaterialTheme.colorScheme.error)
-                        payload != null -> PayloadContent(repo, payload, a)
+                        payload != null -> PayloadContent(repo, payload, a, m.id)
                     }
                     Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (edited != null) Text("bearbeitet", style = MaterialTheme.typography.labelSmall, color = muted)
@@ -255,23 +258,18 @@ fun MessageBubble(
                     if (m.failed) Text("Nicht gesendet – tippen zum erneuten Senden", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error)
                     if (reactions.isNotEmpty()) {
                         val grouped = reactions.values.filter { it.isNotEmpty() }.groupingBy { it }.eachCount()
-                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 2.dp)) {
+                        val mineReaction = reactions[repo.myId]
+                        Row(horizontalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.padding(top = 3.dp)) {
                             for ((e, n) in grouped) Text(
-                                if (n > 1) "$e $n" else e, style = MaterialTheme.typography.labelMedium,
-                                modifier = Modifier.clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.6f)).padding(horizontal = 7.dp, vertical = 2.dp),
+                                if (n > 1) "$e $n" else e, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.clip(RoundedCornerShape(12.dp))
+                                    .background(if (e == mineReaction) MaterialTheme.colorScheme.tertiaryContainer else MaterialTheme.colorScheme.background.copy(alpha = 0.7f))
+                                    .clickable { haptics.tick(); a.onShowReactions() }
+                                    .padding(horizontal = 7.dp, vertical = 2.dp),
                             )
                         }
                     }
                 }
-                DropdownMenu(menu, { menu = false }) {
-                    Row(Modifier.padding(horizontal = 8.dp)) { for (e in REACTIONS) TextButton({ menu = false; haptics.tick(); a.onReact(e) }) { Text(e) } }
-                    DropdownMenuItem({ Text("Antworten") }, { menu = false; a.onReply() })
-                    a.onCopy?.let { DropdownMenuItem({ Text("Text kopieren") }, { menu = false; it() }) }
-                    a.onEdit?.let { DropdownMenuItem({ Text("Bearbeiten") }, { menu = false; it() }) }
-                    payload?.optJSONObject("file")?.let { f ->
-                        DropdownMenuItem({ Text("Speichern …") }, { menu = false; a.onSave(FileMeta.from(f)) })
-                    }
-                    a.onDelete?.let { DropdownMenuItem({ Text("Für alle löschen") }, { menu = false; haptics.reject(); it() }) }
                 }
             }
         }
@@ -279,7 +277,7 @@ fun MessageBubble(
 }
 
 @Composable
-private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions) {
+private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: String) {
     p.optJSONObject("reply")?.let { r ->
         Column(
             Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f))
@@ -292,8 +290,8 @@ private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions) {
     if (p.optBoolean("fwd")) Text("Weitergeleitet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     when (p.optString("t")) {
         "text" -> LinkText(p.optString("body"))
-        "image" -> ImageContent(repo, p, a)
-        "file" -> FileContent(FileMeta.from(p.getJSONObject("file")), a)
+        "image" -> ImageContent(repo, p, a, msgId)
+        "file" -> if (isVideoPayload(p)) VideoContent(repo, p, a, msgId) else FileContent(FileMeta.from(p.getJSONObject("file")), a)
         "voice" -> VoiceContent(repo, p)
         else -> Text("Nicht unterstützte Nachricht", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
     }
@@ -323,7 +321,7 @@ private fun thumbOf(p: JSONObject): Bitmap? = try {
 } catch (e: Exception) { null }
 
 @Composable
-private fun ImageContent(repo: Repo, p: JSONObject, a: BubbleActions) {
+private fun ImageContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: String) {
     val meta = remember(p) { FileMeta.from(p.getJSONObject("file")) }
     val w = p.optInt("w", 4); val h = p.optInt("h", 3)
     val ratio = (w.toFloat() / h.coerceAtLeast(1)).coerceIn(0.5f, 2f)
@@ -331,10 +329,38 @@ private fun ImageContent(repo: Repo, p: JSONObject, a: BubbleActions) {
     val bmp by produceState<Bitmap?>(null, meta.id) {
         value = try { val f = repo.getFile(meta); decodeSampled(f.absolutePath, 1600) } catch (e: Exception) { null }
     }
-    Box(Modifier.width(240.dp).height((240 / ratio).dp).clip(RoundedCornerShape(10.dp)).clickable(enabled = bmp != null) { bmp?.let(a.onOpenImage) }) {
+    Box(Modifier.width(240.dp).height((240 / ratio).dp).clip(RoundedCornerShape(10.dp)).clickable { a.onOpenMedia(msgId) }) {
         val shown = bmp ?: thumb
         if (shown != null) Image(shown.asImageBitmap(), "Foto", Modifier.matchParentSize(), contentScale = ContentScale.Crop)
         if (bmp == null) LinearProgressIndicator(Modifier.align(Alignment.BottomCenter).fillMaxWidth())
+    }
+}
+
+/** Video wie bei WhatsApp: Vorschaubild, Abspiel-Knopf, Dauer und Größe; Antippen öffnet den Player. */
+@Composable
+private fun VideoContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: String) {
+    val meta = remember(p) { FileMeta.from(p.getJSONObject("file")) }
+    val w = p.optInt("w", 16); val h = p.optInt("h", 9)
+    val ratio = (if (w > 0 && h > 0) w.toFloat() / h else 16f / 9f).coerceIn(0.6f, 1.9f)
+    val duration = p.optDouble("duration", 0.0)
+    val thumbData = p.optString("thumb")
+    val thumb by produceState<Bitmap?>(null, meta.id) {
+        value = if (thumbData.isNotEmpty() && thumbData != "null") de.cracky.vela.data.decodeDataUrl(thumbData) else null
+        if (value == null) repo.localFile(meta)?.let { value = localVideoFrame(it) }
+    }
+    Box(Modifier.width(240.dp).height((240 / ratio).dp).clip(RoundedCornerShape(12.dp)).background(Color(0xFF1B1B1B)).clickable { a.onOpenMedia(msgId) }) {
+        thumb?.let { Image(it.asImageBitmap(), "Videovorschau", Modifier.matchParentSize(), contentScale = ContentScale.Crop) }
+        Box(
+            Modifier.align(Alignment.Center).size(54.dp).clip(androidx.compose.foundation.shape.CircleShape).background(Color(0x99000000)),
+            contentAlignment = Alignment.Center,
+        ) { Icon(Icons.Filled.PlayArrow, "Video abspielen", Modifier.size(36.dp), tint = Color.White) }
+        Row(
+            Modifier.align(Alignment.BottomStart).padding(8.dp).clip(RoundedCornerShape(10.dp)).background(Color(0x99000000)).padding(horizontal = 8.dp, vertical = 3.dp),
+            verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Icon(Icons.Filled.Videocam, null, Modifier.size(14.dp), tint = Color.White)
+            Text((if (duration > 0) fmtDuration(duration) + " · " else "") + fmtBytes(meta.size), color = Color.White, style = MaterialTheme.typography.labelSmall)
+        }
     }
 }
 

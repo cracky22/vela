@@ -6,6 +6,7 @@ import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import de.cracky.vela.service.Notifier
 import de.cracky.vela.ui.AppRoot
@@ -22,6 +23,7 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         pendingConv.value = intent?.getStringExtra(Notifier.EXTRA_CONV)
         if (Build.VERSION.SDK_INT >= 33) notifPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        enableEdgeToEdge()
         setContent { VelaTheme { AppRoot(repo, pendingConv) } }
     }
 
