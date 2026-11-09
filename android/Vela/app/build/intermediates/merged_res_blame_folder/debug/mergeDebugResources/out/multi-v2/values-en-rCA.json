@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "de.cracky.vela.app-mergeDebugResources-40:/values-en-rCA/values-en-rCA.xml",
+            "outputFile": "de.cracky.vela.app-mergeDebugResources-44:/values-en-rCA/values-en-rCA.xml",
             "map": [
                 {
                     "source": "C:\\Users\\marti\\.gradle\\caches\\8.9\\transforms\\cca0cc3e8911fcf4cb5d95a8f2af57dc\\transformed\\ui-release\\res\\values-en-rCA\\values-en-rCA.xml",

@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "de.cracky.vela.app-mergeDebugResources-40:/values-or/values-or.xml",
+            "outputFile": "de.cracky.vela.app-mergeDebugResources-44:/values-or/values-or.xml",
             "map": [
                 {
                     "source": "C:\\Users\\marti\\.gradle\\caches\\8.9\\transforms\\ad8eea050f53ebc62f7f4a016af601f1\\transformed\\foundation-release\\res\\values-or\\values-or.xml",

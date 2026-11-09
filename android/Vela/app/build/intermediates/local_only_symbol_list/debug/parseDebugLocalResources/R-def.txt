@@ -6,3 +6,4 @@ drawable ic_notify
 mipmap ic_launcher
 string app_name
 style Theme.Vela
+xml file_paths
