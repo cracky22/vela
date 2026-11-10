@@ -1,7 +1,7 @@
 {
     "logs": [
         {
-            "outputFile": "de.cracky.vela.app-mergeDebugResources-44:/values-night-v8/values-night-v8.xml",
+            "outputFile": "de.cracky.vela.app-mergeDebugResources-53:/values-night-v8/values-night-v8.xml",
             "map": [
                 {
                     "source": "C:\\Users\\marti\\Documents\\GitHub\\vela\\android\\Vela\\app\\src\\main\\res\\values-night\\themes.xml",
@@ -14,12 +14,29 @@
                         "endOffsets": "321"
                     },
                     "to": {
-                        "startLines": "2",
+                        "startLines": "9",
                         "startColumns": "4",
-                        "startOffsets": "55",
-                        "endLines": "6",
+                        "startOffsets": "687",
+                        "endLines": "13",
                         "endColumns": "12",
-                        "endOffsets": "360"
+                        "endOffsets": "992"
+                    }
+                },
+                {
+                    "source": "C:\\Users\\marti\\.gradle\\caches\\8.9\\transforms\\535785dfe80b1c4515670d5aaa7cbf2f\\transformed\\appcompat-1.1.0\\res\\values-night-v8\\values-night-v8.xml",
+                    "from": {
+                        "startLines": "2,3,4,5,6,7,8,9",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,125,209,293,389,491,593,687",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "120,204,288,384,486,588,682,771"
+                    },
+                    "to": {
+                        "startLines": "2,3,4,5,6,7,8,14",
+                        "startColumns": "4,4,4,4,4,4,4,4",
+                        "startOffsets": "55,125,209,293,389,491,593,997",
+                        "endColumns": "69,83,83,95,101,101,93,88",
+                        "endOffsets": "120,204,288,384,486,588,682,1081"
                     }
                 }
             ]

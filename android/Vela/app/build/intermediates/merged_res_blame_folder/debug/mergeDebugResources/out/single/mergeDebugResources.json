@@ -1,38 +1,38 @@
 [
     {
-        "merged": "de.cracky.vela.app-debug-46:/xml_file_paths.xml.flat",
-        "source": "de.cracky.vela.app-main-48:/xml/file_paths.xml"
+        "merged": "de.cracky.vela.app-debug-55:/drawable_ic_notify.xml.flat",
+        "source": "de.cracky.vela.app-main-57:/drawable/ic_notify.xml"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-xhdpi_ic_launcher.png.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-xhdpi/ic_launcher.png"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-xxxhdpi_ic_launcher.png.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-xxxhdpi/ic_launcher.png"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-xxhdpi_ic_launcher.png.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-xxhdpi/ic_launcher.png"
+        "merged": "de.cracky.vela.app-debug-55:/xml_file_paths.xml.flat",
+        "source": "de.cracky.vela.app-main-57:/xml/file_paths.xml"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-anydpi-v26_ic_launcher.xml.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-anydpi-v26/ic_launcher.xml"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-anydpi-v26_ic_launcher.xml.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-anydpi-v26/ic_launcher.xml"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-hdpi_ic_launcher.png.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-hdpi/ic_launcher.png"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-hdpi_ic_launcher.png.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-hdpi/ic_launcher.png"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/drawable_ic_launcher_foreground.png.flat",
-        "source": "de.cracky.vela.app-main-48:/drawable/ic_launcher_foreground.png"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-xxhdpi_ic_launcher.png.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-xxhdpi/ic_launcher.png"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-mdpi_ic_launcher.png.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-mdpi/ic_launcher.png"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-xhdpi_ic_launcher.png.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-xhdpi/ic_launcher.png"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/drawable_ic_notify.xml.flat",
-        "source": "de.cracky.vela.app-main-48:/drawable/ic_notify.xml"
+        "merged": "de.cracky.vela.app-debug-55:/drawable_ic_launcher_foreground.png.flat",
+        "source": "de.cracky.vela.app-main-57:/drawable/ic_launcher_foreground.png"
     },
     {
-        "merged": "de.cracky.vela.app-debug-46:/mipmap-xxxhdpi_ic_launcher.png.flat",
-        "source": "de.cracky.vela.app-main-48:/mipmap-xxxhdpi/ic_launcher.png"
+        "merged": "de.cracky.vela.app-debug-55:/mipmap-mdpi_ic_launcher.png.flat",
+        "source": "de.cracky.vela.app-main-57:/mipmap-mdpi/ic_launcher.png"
     }
 ]
