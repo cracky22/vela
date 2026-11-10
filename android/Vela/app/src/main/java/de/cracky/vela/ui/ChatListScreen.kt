@@ -55,6 +55,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBarDefaults
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.derivedStateOf
@@ -78,8 +79,10 @@ import kotlinx.coroutines.launch
 fun ChatListScreen(repo: Repo, onSettings: () -> Unit) {
     val convs by repo.convs.collectAsState()
     val dec by repo.dec.collectAsState()
+    val hidePreviews by repo.hidePreviews.collectAsState()
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
+    var refreshing by remember { mutableStateOf(false) }
     var tab by remember { mutableStateOf(0) }
     var query by remember { mutableStateOf("") }
     var searching by remember { mutableStateOf(false) }
@@ -165,11 +168,17 @@ fun ChatListScreen(repo: Repo, onSettings: () -> Unit) {
                     )
                 }
             } else {
-                LazyColumn(Modifier.fillMaxSize(), state = listState) {
-                    items(shown, key = { it.id }) { c ->
-                        Column(Modifier.animateItem()) {
-                            if (c.status == "accepted") ConvRow(repo, c, dec) else RequestRow(repo, c)
-                            HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), modifier = Modifier.padding(start = 80.dp))
+                PullToRefreshBox(
+                    isRefreshing = refreshing,
+                    onRefresh = { refreshing = true; scope.launch { repo.refreshAll(); refreshing = false } },
+                    modifier = Modifier.fillMaxSize(),
+                ) {
+                    LazyColumn(Modifier.fillMaxSize(), state = listState) {
+                        items(shown, key = { it.id }) { c ->
+                            Column(Modifier.animateItem()) {
+                                if (c.status == "accepted") ConvRow(repo, c, dec, hidePreviews) else RequestRow(repo, c)
+                                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f), modifier = Modifier.padding(start = 80.dp))
+                            }
                         }
                     }
                 }
@@ -204,7 +213,7 @@ fun ChatListScreen(repo: Repo, onSettings: () -> Unit) {
 }
 
 @Composable
-private fun ConvRow(repo: Repo, c: Conv, dec: Map<String, Dec>) {
+private fun ConvRow(repo: Repo, c: Conv, dec: Map<String, Dec>, hidePreview: Boolean) {
     val scope = rememberCoroutineScope()
     val haptics = rememberHaptics()
     var menu by remember { mutableStateOf(false) }
@@ -241,7 +250,7 @@ private fun ConvRow(repo: Repo, c: Conv, dec: Map<String, Dec>) {
                 }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        if (isTyping) "schreibt …" else (if (c.keyChanged) "Sicherheitsschlüssel geändert" else listPreview(c, dec, repo)),
+                        if (isTyping) "schreibt …" else (if (c.keyChanged) "Sicherheitsschlüssel geändert" else if (hidePreview && c.last != null) "Nachricht" else listPreview(c, dec, repo)),
                         style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis,
                         color = when {
                             isTyping -> MaterialTheme.colorScheme.primary

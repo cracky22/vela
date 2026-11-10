@@ -59,6 +59,8 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Subtitles
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -167,7 +169,9 @@ private fun TickIcon(t: Tick) {
 fun MessageBubble(
     repo: Repo, m: Msg, d: Dec?, conv: Conv, reactions: Map<String, String>, edited: String?,
     showSender: Boolean, a: BubbleActions, animateIn: Boolean = false,
+    hidden: Boolean = false, highlight: String = "", nowTick: Long = 0L,
 ) {
+    var revealed by remember(hidden) { mutableStateOf(false) }
     val mine = m.from == repo.myId
     val haptics = rememberHaptics()
     val payload = if (edited != null && d?.payload != null) JSONObject(d.payload.toString()).put("body", edited) else d?.payload
@@ -244,10 +248,21 @@ fun MessageBubble(
                         m.viewOnce && mine -> IconText(Icons.Filled.LooksOne, "Einmalansicht" + if (m.viewedAt != null) " (geöffnet)" else "")
                         d == null -> IconText(Icons.Filled.Lock, "wird entschlüsselt …", muted)
                         d.error != null -> IconText(Icons.Filled.Warning, d.error, MaterialTheme.colorScheme.error)
-                        payload != null -> PayloadContent(repo, payload, a, m.id)
+                        payload != null && hidden && !revealed -> Row(
+                            Modifier.clickable { haptics.tick(); revealed = true }, verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                        ) {
+                            Icon(Icons.Filled.VisibilityOff, null, Modifier.size(18.dp))
+                            Text("Inhalt ausgeblendet – antippen zum Anzeigen", style = MaterialTheme.typography.bodyMedium)
+                        }
+                        payload != null -> PayloadContent(repo, payload, a, m.id, highlight)
                     }
                     Row(Modifier.align(Alignment.End), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
                         if (edited != null) Text("bearbeitet", style = MaterialTheme.typography.labelSmall, color = muted)
+                        m.expiresAt?.let { exp ->
+                            Icon(Icons.Filled.Timer, "Verschwindet", Modifier.size(12.dp), tint = muted)
+                            Text(fmtRemaining(exp - (if (nowTick > 0) nowTick else System.currentTimeMillis())), style = MaterialTheme.typography.labelSmall, color = muted)
+                        }
                         Text(fmtTime(m.ts), style = MaterialTheme.typography.labelSmall, color = muted)
                         if (mine) AnimatedContent(
                             targetState = tickOf(m, conv, repo.myId),
@@ -277,7 +292,7 @@ fun MessageBubble(
 }
 
 @Composable
-private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: String) {
+private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: String, highlight: String = "") {
     p.optJSONObject("reply")?.let { r ->
         Column(
             Modifier.padding(bottom = 4.dp).clip(RoundedCornerShape(8.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f))
@@ -289,7 +304,10 @@ private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: S
     }
     if (p.optBoolean("fwd")) Text("Weitergeleitet", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
     when (p.optString("t")) {
-        "text" -> LinkText(p.optString("body"))
+        "text" -> {
+            LinkText(p.optString("body"), highlight)
+            p.optJSONObject("link")?.let { LinkCard(it) }
+        }
         "image" -> ImageContent(repo, p, a, msgId)
         "file" -> if (isVideoPayload(p)) VideoContent(repo, p, a, msgId) else FileContent(FileMeta.from(p.getJSONObject("file")), a)
         "voice" -> VoiceContent(repo, p)
@@ -298,9 +316,10 @@ private fun PayloadContent(repo: Repo, p: JSONObject, a: BubbleActions, msgId: S
 }
 
 @Composable
-private fun LinkText(body: String) {
+private fun LinkText(body: String, highlight: String = "") {
     val linkColor = MaterialTheme.colorScheme.primary
-    val text: AnnotatedString = remember(body, linkColor) {
+    val hl = MaterialTheme.colorScheme.tertiaryContainer
+    val text: AnnotatedString = remember(body, linkColor, highlight, hl) {
         buildAnnotatedString {
             var last = 0
             for (mt in URL_RE.findAll(body)) {
@@ -310,9 +329,51 @@ private fun LinkText(body: String) {
                 last = mt.range.first + url.length
             }
             append(body.substring(last))
+            if (highlight.isNotEmpty()) {
+                var from = 0
+                while (true) {
+                    val at = body.indexOf(highlight, from, ignoreCase = true)
+                    if (at < 0) break
+                    addStyle(SpanStyle(background = hl), at, at + highlight.length)
+                    from = at + highlight.length
+                }
+            }
         }
     }
     Text(text, style = MaterialTheme.typography.bodyLarge)
+}
+
+/** Linkvorschau (vom Absender mitgeschickt – dein Gerät ruft die Seite nicht auf). */
+@Composable
+private fun LinkCard(link: JSONObject) {
+    val uri = androidx.compose.ui.platform.LocalUriHandler.current
+    val url = link.optString("url")
+    val thumb = remember(link) { link.optString("thumb").takeIf { it.isNotEmpty() }?.let { de.cracky.vela.data.decodeDataUrl(it) } }
+    val host = remember(url) { runCatching { java.net.URI(url).host.removePrefix("www.") }.getOrDefault(url) }
+    Column(
+        Modifier.padding(top = 6.dp).width(240.dp).clip(RoundedCornerShape(12.dp)).background(MaterialTheme.colorScheme.background.copy(alpha = 0.55f))
+            .clickable { runCatching { uri.openUri(url) } },
+    ) {
+        thumb?.let { Image(it.asImageBitmap(), null, Modifier.fillMaxWidth().height(120.dp), contentScale = ContentScale.Crop) }
+        Column(Modifier.padding(10.dp)) {
+            Text(host, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            Text(link.optString("title"), style = MaterialTheme.typography.titleSmall, maxLines = 2)
+            link.optString("description").takeIf { it.isNotEmpty() }?.let {
+                Text(it, style = MaterialTheme.typography.bodySmall, maxLines = 3, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+    }
+}
+
+fun fmtRemaining(ms: Long): String {
+    val m = ms / 60000
+    return when {
+        ms <= 0 -> "gleich weg"
+        m >= 2 * 24 * 60 -> "${m / (24 * 60)} Tg."
+        m >= 60 -> "${m / 60} Std."
+        m >= 1 -> "$m Min."
+        else -> "< 1 Min."
+    }
 }
 
 private fun thumbOf(p: JSONObject): Bitmap? = try {

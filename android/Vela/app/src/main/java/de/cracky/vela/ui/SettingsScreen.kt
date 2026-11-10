@@ -63,6 +63,14 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
     val sync by repo.sync.collectAsState()
     var localCount by remember { mutableStateOf(0) }
     var confirmClear by remember { mutableStateOf(false) }
+    val vault by repo.vaultEnabled.collectAsState()
+    var vaultDialog by remember { mutableStateOf<Boolean?>(null) }
+    var showScan by remember { mutableStateOf(false) }
+    var hideNotif by remember { mutableStateOf(repo.store.hideNotifContent) }
+    var hideList by remember { mutableStateOf(repo.store.hideListPreview) }
+    var hideChat by remember { mutableStateOf(repo.store.hideContentInChats) }
+    var linkPrev by remember { mutableStateOf(repo.store.linkPreviews) }
+    androidx.compose.runtime.LaunchedEffect(Unit) { repo.refreshVaultStatus() }
     androidx.compose.runtime.LaunchedEffect(sync == null, keepHistory) { localCount = repo.localCount() }
     var hapticsOn by remember { mutableStateOf(repo.store.haptics) }
     var trEnabled by remember { mutableStateOf(repo.store.transcribeEnabled) }
@@ -74,7 +82,7 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
     val s = m.settings
     fun save(n: de.cracky.vela.data.Settings) = scope.launch { try { repo.saveSettings(n) } catch (e: Exception) { repo.say(e.message ?: "Fehler") } }
 
-    Scaffold(topBar = { TopAppBar(title = { Text("Einstellungen") }, navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Text("Einstellungen") }) }) { pad ->
         Column(Modifier.padding(pad).padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.clickable { pickAvatar.launch("image/*") }) {
@@ -107,6 +115,38 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             SwitchRow("Online-Status zeigen", s.showOnline) { save(s.copy(showOnline = it)) }
+            HorizontalDivider()
+            Text("Datenschutz", style = MaterialTheme.typography.titleMedium)
+            SwitchRow("Nachrichteninhalt in Benachrichtigungen ausblenden", hideNotif) { hideNotif = it; repo.store.hideNotifContent = it }
+            SwitchRow("Vorschau in der Chatliste ausblenden", hideList) { hideList = it; repo.setHidePreviews(it) }
+            SwitchRow("Inhalte in Chats standardmäßig ausblenden", hideChat) { hideChat = it; repo.setHideContent(it) }
+            Text(
+                "Ausgeblendete Inhalte lassen sich pro Nachricht antippen. Im Chat gibt es dafür außerdem den Menüpunkt „Inhalte ausblenden“.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SwitchRow("Linkvorschau beim Senden erzeugen", linkPrev) { linkPrev = it; repo.store.linkPreviews = it }
+            Text(
+                "Beim Senden ruft DEIN Gerät einmalig die verlinkte Seite ab und schickt Titel und Bild Ende-zu-Ende-verschlüsselt mit. Empfänger rufen die Seite nicht auf. Die Seite sieht dabei deine IP-Adresse.",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            HorizontalDivider()
+            Text("Schlüsseltresor", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (vault) "Aktiv: Deine Schlüssel liegen passwortgeschützt (Argon2id) beim Server. Neue Geräte entsperren sich beim Login automatisch mit deinem Passwort."
+                else "Aus: Neue Geräte brauchen deinen Wiederherstellungsschlüssel oder eine QR-Anmeldung.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button({ vaultDialog = true }) { Text(if (vault) "Aktualisieren" else "Einrichten") }
+                if (vault) OutlinedButton({ vaultDialog = false }) { Text("Deaktivieren") }
+            }
+            HorizontalDivider()
+            Text("Geräte", style = MaterialTheme.typography.titleMedium)
+            Text(
+                "Mit dem Handy ein neues Gerät (z. B. Vela-Web) anmelden: Auf dem neuen Gerät „Mit QR-Code anmelden“ wählen, dann hier scannen.",
+                style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Button({ showScan = true }, Modifier.fillMaxWidth()) { Text("Neues Gerät anmelden (QR scannen)") }
             HorizontalDivider()
             Text("Verlauf auf diesem Gerät", style = MaterialTheme.typography.titleMedium)
             SwitchRow("Nachrichten lokal speichern", keepHistory) { keepHistory = it; repo.store.keepHistory = it; if (it) repo.persistAllLoaded() }
@@ -170,6 +210,8 @@ fun SettingsScreen(repo: Repo, onBack: () -> Unit) {
             Text("com.crackyOS.vela · Android", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(bottom = 24.dp))
         }
     }
+    vaultDialog?.let { enable -> VaultDialog(repo, enable) { vaultDialog = null } }
+    if (showScan) QrScanDialog(repo) { showScan = false }
     if (confirmClear) AlertDialog(
         onDismissRequest = { confirmClear = false }, title = { Text("Lokalen Verlauf löschen?") },
         text = { Text("Alle auf diesem Gerät gespeicherten Nachrichten und Anhänge werden entfernt. Was der Server noch hat, lässt sich erneut laden.") },
@@ -191,4 +233,50 @@ private fun SwitchRow(label: String, value: Boolean, onChange: (Boolean) -> Unit
         Text(label, Modifier.weight(1f))
         Switch(value, { haptics.toggle(it); onChange(it) })
     }
+}
+
+@Composable
+private fun VaultDialog(repo: Repo, enable: Boolean, onClose: () -> Unit) {
+    val scope = rememberCoroutineScope()
+    val haptics = rememberHaptics()
+    var pw by remember { mutableStateOf("") }
+    var code by remember { mutableStateOf("") }
+    var err by remember { mutableStateOf<String?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    AlertDialog(
+        onDismissRequest = { if (!busy) onClose() },
+        title = { Text(if (enable) "Schlüsseltresor einrichten" else "Schlüsseltresor deaktivieren") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(
+                    if (enable) "Deine Schlüssel werden mit deinem Passwort verschlüsselt (Argon2id) beim Server abgelegt. Das Passwort verlässt das Gerät nur als Nachweis. Gib dein aktuelles Passwort und einen frischen 2FA-Code ein."
+                    else "Der Tresor wird gelöscht. Neue Geräte brauchen danach den Wiederherstellungsschlüssel. Gib zur Bestätigung dein Passwort und einen 2FA-Code ein.",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                OutlinedTextField(
+                    pw, { pw = it }, label = { Text("Passwort") }, singleLine = true,
+                    visualTransformation = androidx.compose.ui.text.input.PasswordVisualTransformation(),
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Password),
+                )
+                OutlinedTextField(
+                    code, { code = it.filter { c -> c.isDigit() }.take(6) }, label = { Text("2FA-Code (6 Ziffern)") }, singleLine = true,
+                    keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number),
+                )
+                err?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                if (busy) androidx.compose.material3.LinearProgressIndicator(Modifier.fillMaxWidth())
+            }
+        },
+        confirmButton = {
+            TextButton({
+                busy = true; err = null
+                scope.launch {
+                    try {
+                        if (enable) repo.vaultEnable(pw, code) else repo.vaultDisable(pw, code)
+                        haptics.confirm(); repo.say(if (enable) "Schlüsseltresor aktiv" else "Schlüsseltresor deaktiviert"); onClose()
+                    } catch (e: Exception) { haptics.reject(); err = e.message ?: "Fehler"; busy = false }
+                }
+            }, enabled = !busy && pw.isNotEmpty() && code.length == 6) { Text(if (enable) "Einrichten" else "Deaktivieren") }
+        },
+        dismissButton = { TextButton({ if (!busy) onClose() }) { Text("Abbrechen") } },
+    )
 }

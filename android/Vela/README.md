@@ -48,3 +48,12 @@ Fertige APK: `Build ▸ Build Bundle(s)/APK(s) ▸ Build APK(s)` → `app/build/
 * **Tapback**: Nachricht lange drücken → Reaktionsleiste (Daumen, Herz, … und „+“ für beliebige Emojis), darunter die Nachricht und die Aktionen. Auf die Reaktionen unter einer Nachricht tippen zeigt, wer womit reagiert hat.
 * **Verlauf lokal speichern** (Einstellungen ▸ Verlauf auf diesem Gerät): verschlüsselt im App-Speicher, auf Wunsch alle Nachrichten und Anhänge laden.
 * Textfarben folgen dem Theme (Hell/Dunkel), Nachrichtenblasen haben eigene Kontrastfarben.
+
+## Neu: Navigation, Status, QR, Suche & mehr
+
+* **Navigationsleiste** unten: Chats, Status, Einstellungen.
+* **Status** (24 h, Ende-zu-Ende-verschlüsselt): Text- und Foto-Updates, Betrachter mit Fortschrittsbalken, Antworten, Aufrufe, Löschen.
+* **Anmeldung per QR**: „Mit QR-Code / Vela-Web anmelden“ (dieses Gerät zeigt den Code, ein angemeldetes Gerät scannt) und in den Einstellungen „Neues Gerät anmelden“ (dieses Handy scannt den Code eines neuen Geräts).
+* **Schlüsseltresor** in den Einstellungen einrichten, aktualisieren und deaktivieren.
+* **Chat-Suche**, **Inhalte ausblenden**, **Linkvorschau** (vom Absender mitgeschickt), Timer-Anzeige für verschwindende Nachrichten.
+* Live-Typing und Sende-Fortschritt bleiben über der Eingabe sichtbar; Upload **abbrechen**; Ladebalken für ältere Nachrichten; Pull-to-Refresh.

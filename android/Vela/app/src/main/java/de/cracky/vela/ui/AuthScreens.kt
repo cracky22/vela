@@ -87,6 +87,7 @@ fun AuthHost(repo: Repo) {
     when (mode) {
         "register" -> RegisterScreen(repo, busy, onBack = { mode = "login" })
         "recover" -> RecoverScreen(repo, busy, onBack = { mode = "login" })
+        "qr" -> QrLoginScreen(repo, onBack = { mode = "login" })
         else -> {
             var user by remember { mutableStateOf("") }
             var pw by remember { mutableStateOf("") }
@@ -107,6 +108,7 @@ fun AuthHost(repo: Repo) {
                     onClick = { repo.store.server = server; scope.launch { repo.login(user, pw, code.replace(" ", "")) } },
                     enabled = !busy && user.isNotBlank() && pw.isNotEmpty(), modifier = Modifier.fillMaxWidth(),
                 ) { Text(if (busy) "Bitte warten …" else "Anmelden") }
+                OutlinedButton({ mode = "qr" }, Modifier.fillMaxWidth()) { Text("Mit QR-Code / Vela-Web anmelden") }
                 OutlinedButton({ mode = "register" }, Modifier.fillMaxWidth()) { Text("Neues Konto erstellen") }
                 TextButton({ mode = "recover" }) { Text("Passwort oder 2FA-Gerät verloren?") }
                 TextButton({ showServer = !showServer }) { Text(if (showServer) "Server verbergen" else "Server ändern") }

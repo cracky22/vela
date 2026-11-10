@@ -42,6 +42,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -55,7 +56,13 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.InsertDriveFile
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LooksOne
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Mic
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Timer
+import androidx.compose.material.icons.filled.Visibility
+import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.Videocam
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
@@ -66,6 +73,8 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
@@ -76,7 +85,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
@@ -104,7 +115,7 @@ import java.io.File
 private class ChatView(val visible: List<Msg>, val reactions: Map<String, Map<String, String>>, val edits: Map<String, String>)
 
 /** Wie silentMaps() im Web-Client: Reaktionen und Bearbeitungen sind stille Nachrichten. */
-private fun buildView(list: List<Msg>, dec: Map<String, Dec>): ChatView {
+private fun buildView(list: List<Msg>, dec: Map<String, Dec>, now: Long): ChatView {
     val reactions = HashMap<String, MutableMap<String, String>>()
     val edits = HashMap<String, String>()
     val byId = list.associateBy { it.id }
@@ -116,8 +127,18 @@ private fun buildView(list: List<Msg>, dec: Map<String, Dec>): ChatView {
             "edit" -> if (byId[p.optString("target")]?.from == m.from) edits[p.optString("target")] = p.optString("body")
         }
     }
-    val now = System.currentTimeMillis()
     return ChatView(list.filter { !it.silent && (it.expiresAt ?: Long.MAX_VALUE) > now }, reactions, edits)
+}
+
+/** Durchsuchbarer Text einer Nachricht (Text, Bildunterschrift, Dateiname, Linktitel). */
+private fun searchableText(p: org.json.JSONObject?, edited: String?): String {
+    if (p == null) return ""
+    return when (p.optString("t")) {
+        "text" -> (edited ?: p.optString("body")) + " " + (p.optJSONObject("link")?.optString("title").orEmpty())
+        "image" -> p.optString("caption")
+        "file" -> p.optJSONObject("file")?.optString("name").orEmpty()
+        else -> ""
+    }
 }
 
 private class Recorder(private val ctx: Context) {
@@ -175,7 +196,19 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     val conv = convs.firstOrNull { it.id == convId }
     if (conv == null) { LaunchedEffect(Unit) { onBack() }; return }
     val list = allMsgs[convId].orEmpty()
-    val view = remember(list, dec) { buildView(list, dec) }
+    val now by produceState(System.currentTimeMillis()) { while (true) { delay(15_000); value = System.currentTimeMillis() } }
+    val view = remember(list, dec, now) { buildView(list, dec, now) }
+    val shownList = remember(view) { view.visible.reversed() }
+    val loadingOlder by repo.loadingOlder.collectAsState()
+    var refreshing by remember { mutableStateOf(false) }
+    var searchOpen by remember(convId) { mutableStateOf(false) }
+    var query by remember(convId) { mutableStateOf("") }
+    var searchPos by remember(convId) { mutableIntStateOf(0) }
+    var hide by remember(convId) { mutableStateOf(repo.hideContent.value) }
+    val matches = remember(view, query, searchOpen) {
+        if (!searchOpen || query.trim().length < 2) emptyList()
+        else view.visible.filter { searchableText(dec[it.id]?.payload, view.edits[it.id]).contains(query.trim(), ignoreCase = true) }.map { it.id }
+    }
     val listState = rememberLazyListState()
 
     var text by remember(convId) { mutableStateOf("") }
@@ -243,6 +276,16 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
         if (listState.firstVisibleItemIndex <= 2) listState.animateScrollToItem(0)
         repo.markRead(convId)
     }
+    fun gotoMatch(i: Int) {
+        if (matches.isEmpty()) return
+        val k = ((i % matches.size) + matches.size) % matches.size
+        searchPos = k
+        val idx = shownList.indexOfFirst { it.id == matches[k] }
+        if (idx >= 0) scope.launch { listState.animateScrollToItem(idx) }
+    }
+    LaunchedEffect(matches.size, query) { if (matches.isNotEmpty()) gotoMatch(matches.lastIndex) }
+    androidx.activity.compose.BackHandler(enabled = searchOpen) { searchOpen = false; query = "" }
+
     // Tipp-Ereignis: höchstens alle 350 ms (mit Live-Vorschau, falls aktiviert), nach 5 s Pause "stop"
     LaunchedEffect(text) {
         if (conv.status != "accepted") return@LaunchedEffect
@@ -283,9 +326,16 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
     Scaffold(
         topBar = {
             TopAppBar(
-                navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } },
+                navigationIcon = { IconButton({ if (searchOpen) { searchOpen = false; query = "" } else onBack() }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Zurück") } },
                 title = {
-                    Row(Modifier.clickable { info = true }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    if (searchOpen) {
+                        val focus = remember { androidx.compose.ui.focus.FocusRequester() }
+                        LaunchedEffect(Unit) { focus.requestFocus() }
+                        OutlinedTextField(
+                            query, { query = it }, singleLine = true, placeholder = { Text("In diesem Chat suchen") },
+                            shape = RoundedCornerShape(28.dp), modifier = Modifier.fillMaxWidth().focusRequester(focus),
+                        )
+                    } else Row(Modifier.clickable { info = true }, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         Avatar(repo, conv.id, conv.isGroup, conv.avatarVersion, conv.title, 36.dp)
                         Column {
                             Text(conv.title + if (conv.verified) " ✔" else "", maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
@@ -295,10 +345,23 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                     }
                 },
                 actions = {
-                    IconButton({ headerMenu = true }) { Icon(Icons.Default.MoreVert, "Menü") }
+                    if (searchOpen) {
+                        if (query.trim().length >= 2) Text(
+                            if (matches.isEmpty()) "0" else "${searchPos + 1}/${matches.size}",
+                            style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(horizontal = 4.dp),
+                        )
+                        IconButton({ haptics.tick(); gotoMatch(searchPos - 1) }, enabled = matches.isNotEmpty()) { Icon(Icons.Filled.KeyboardArrowUp, "Vorheriger Treffer") }
+                        IconButton({ haptics.tick(); gotoMatch(searchPos + 1) }, enabled = matches.isNotEmpty()) { Icon(Icons.Filled.KeyboardArrowDown, "Nächster Treffer") }
+                    } else {
+                        IconButton({ haptics.light(); searchOpen = true }) { Icon(Icons.Filled.Search, "Im Chat suchen") }
+                        IconButton({ headerMenu = true }) { Icon(Icons.Default.MoreVert, "Menü") }
+                    }
                     DropdownMenu(headerMenu, { headerMenu = false }) {
                         DropdownMenuItem({ Text(if (conv.isGroup) "Gruppeninfo" else "Kontaktinfo") }, { headerMenu = false; info = true })
-                        DropdownMenuItem({ Text("Verschwindende Nachrichten") }, { headerMenu = false; ttlDialog = true })
+                        DropdownMenuItem({ Text(if (hide) "Inhalte einblenden" else "Inhalte ausblenden") }, {
+                            headerMenu = false; hide = !hide; haptics.toggle(hide)
+                        }, leadingIcon = { Icon(if (hide) Icons.Filled.Visibility else Icons.Filled.VisibilityOff, null) })
+                        DropdownMenuItem({ Text("Verschwindende Nachrichten") }, { headerMenu = false; ttlDialog = true }, leadingIcon = { Icon(Icons.Filled.Timer, null) })
                         DropdownMenuItem({ Text(if (conv.muted) "Stumm aufheben" else "Stummschalten") }, { headerMenu = false; scope.launch { runCatching { repo.patchConvFlags(conv, muted = !conv.muted) } } })
                         DropdownMenuItem({ Text(if (conv.archived) "Aus Archiv holen" else "Archivieren") }, { headerMenu = false; scope.launch { runCatching { repo.patchConvFlags(conv, archived = !conv.archived) } } })
                     }
@@ -316,26 +379,24 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                     TextButton({ scope.launch { if (conv.isGroup) changedUsers.forEach { repo.acceptNewKey(it!!.id) } else repo.acceptNewKey(conv.id) } }) { Text("Akzeptieren") }
                 }
             }
-            LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = listState, reverseLayout = true) {
-                val shown = view.visible.reversed()
-                val livePreview = live[convId]
-                if (others.isNotEmpty() && (conv.isGroup || livePreview.isNullOrEmpty())) item(key = "typing") { TypingBubble(Modifier.animateItem()) }
-                if (!conv.isGroup && !livePreview.isNullOrEmpty()) item(key = "live") {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
-                        Column(
-                            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(horizontal = 10.dp, vertical = 6.dp),
-                        ) {
-                            Text("Live", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-                            Text(livePreview, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        }
-                    }
-                }
-                items(uploads.filter { it.convId == convId }, key = { "u" + it.id }) { u ->
-                    Column(Modifier.fillMaxWidth().padding(8.dp)) {
-                        IconText(Icons.Filled.Lock, "${u.label} wird verschlüsselt und gesendet …", style = MaterialTheme.typography.labelMedium)
-                        LinearProgressIndicator(progress = { u.progress }, modifier = Modifier.fillMaxWidth())
-                    }
-                }
+            if (conv.ttl > 0) Row(
+                Modifier.fillMaxWidth().clickable { ttlDialog = true }.background(MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.5f)).padding(horizontal = 16.dp, vertical = 4.dp),
+                verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                Icon(Icons.Filled.Timer, null, Modifier.size(14.dp))
+                Text("Verschwindende Nachrichten: ${de.cracky.vela.data.ttlLabel(conv.ttl)}", style = MaterialTheme.typography.labelMedium)
+            }
+            if (searchOpen && more[convId] == true) Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (convId in loadingOlder) { CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp); Text("  Lade Verlauf …", style = MaterialTheme.typography.labelMedium) }
+                else TextButton({ repo.bg { repo.loadWholeChat(convId) } }) { Text("Auch älteren Verlauf durchsuchen") }
+            }
+            PullToRefreshBox(
+                isRefreshing = refreshing,
+                onRefresh = { refreshing = true; scope.launch { repo.refreshChat(convId); refreshing = false } },
+                modifier = Modifier.weight(1f).fillMaxWidth(),
+            ) {
+            LazyColumn(Modifier.fillMaxSize(), state = listState, reverseLayout = true) {
+                val shown = shownList
                 items(shown, key = { it.id }) { m ->
                     if (m.system != null) Box(Modifier.animateItem()) { SystemRow(repo, m) } else {
                         val idx = shown.indexOf(m)
@@ -344,6 +405,7 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                         Box(Modifier.animateItem()) { MessageBubble(
                             repo, m, dec[m.id], conv, view.reactions[m.id].orEmpty(), view.edits[m.id], showSender,
                             animateIn = m.pending || m.ts >= openedAt,
+                            hidden = hide, highlight = if (searchOpen) query.trim() else "", nowTick = if (m.expiresAt != null) now else 0L,
                             a = BubbleActions(
                                 onReply = {
                                     val p = dec[m.id]?.payload
@@ -376,7 +438,10 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                     }
                 }
                 if (more[convId] == true) item(key = "more") {
-                    TextButton({ scope.launch { repo.loadMessages(convId, older = true) } }, Modifier.fillMaxWidth()) { Text("Ältere Nachrichten laden") }
+                    if (convId in loadingOlder) Column(Modifier.fillMaxWidth().padding(16.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                        LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Text("Lade ältere Nachrichten …", style = MaterialTheme.typography.labelMedium, modifier = Modifier.padding(top = 6.dp))
+                    } else TextButton({ haptics.light(); scope.launch { repo.loadMessages(convId, older = true) } }, Modifier.fillMaxWidth()) { Text("Ältere Nachrichten laden") }
                 }
                 if (allMsgs[convId] == null) item(key = "loading") {
                     LinearProgressIndicator(Modifier.fillMaxWidth().padding(16.dp))
@@ -387,6 +452,34 @@ fun ChatScreen(repo: Repo, convId: String, onBack: () -> Unit) {
                         style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.fillMaxWidth().padding(16.dp), textAlign = androidx.compose.ui.text.style.TextAlign.Center,
                     )
+                }
+            }
+            }
+
+            // ---------------------------------------------------------------- Immer sichtbar: Tippen, Live-Vorschau, Sende-Fortschritt
+            val livePreview = live[convId]
+            val myUploads = uploads.filter { it.convId == convId }
+            AnimatedVisibility(
+                others.isNotEmpty() || !livePreview.isNullOrEmpty() || myUploads.isNotEmpty(),
+                enter = expandVertically(spring(stiffness = 500f)) + fadeIn(), exit = shrinkVertically() + fadeOut(),
+            ) {
+                Column(Modifier.fillMaxWidth()) {
+                    if (others.isNotEmpty() && (conv.isGroup || livePreview.isNullOrEmpty())) TypingBubble()
+                    if (!conv.isGroup && !livePreview.isNullOrEmpty()) Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 2.dp)) {
+                        Column(
+                            Modifier.widthIn(max = 300.dp).clip(RoundedCornerShape(16.dp)).background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)).padding(horizontal = 10.dp, vertical = 6.dp),
+                        ) {
+                            Text("Live", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                            Text(livePreview, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+                    for (u in myUploads) Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            IconText(Icons.Filled.Lock, "${u.label} wird verschlüsselt und gesendet …", style = MaterialTheme.typography.labelMedium)
+                            LinearProgressIndicator(progress = { u.progress }, modifier = Modifier.fillMaxWidth().padding(top = 4.dp))
+                        }
+                        IconButton({ haptics.reject(); repo.cancelUpload(u.id) }) { Icon(Icons.Default.Close, "Senden abbrechen") }
+                    }
                 }
             }
 

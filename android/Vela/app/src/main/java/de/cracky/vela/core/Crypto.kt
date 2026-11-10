@@ -476,6 +476,68 @@ object Crypto {
         }
     }
 
+    // ------------------------------------------------------------------ QR-Anmeldung (ECDH P-256 + HKDF + AES-GCM)
+    class LinkPair(val priv: PrivateKey, val pubB64url: String)
+
+    private fun rawPoint(pub: ECPublicKey): ByteArray {
+        fun fixed(b: BigInteger): ByteArray {
+            val raw = stripZeros(b.toByteArray()); val out = ByteArray(32)
+            System.arraycopy(raw, 0, out, 32 - raw.size, raw.size); return out
+        }
+        return byteArrayOf(4) + fixed(pub.w.affineX) + fixed(pub.w.affineY)
+    }
+
+    fun newLinkPair(): LinkPair {
+        val g = KeyPairGenerator.getInstance("EC", bc)
+        g.initialize(ECGenParameterSpec("secp256r1"))
+        val kp = g.generateKeyPair()
+        return LinkPair(kp.private, rawPoint(kp.public as ECPublicKey).b64url())
+    }
+
+    private fun importRawPub(raw: ByteArray): PublicKey {
+        if (raw.size != 65 || raw[0].toInt() != 4) throw CryptoError("link", "Ungültiger Schlüssel im QR-Code")
+        val x = BigInteger(1, raw.copyOfRange(1, 33)); val y = BigInteger(1, raw.copyOfRange(33, 65))
+        return KeyFactory.getInstance("EC", bc).generatePublic(java.security.spec.ECPublicKeySpec(java.security.spec.ECPoint(x, y), ecSpec()))
+    }
+
+    private fun linkKey(priv: PrivateKey, peerRaw: ByteArray, id: String): ByteArray {
+        val ka = javax.crypto.KeyAgreement.getInstance("ECDH", bc)
+        ka.init(priv)
+        ka.doPhase(importRawPub(peerRaw), true)
+        val salt = ByteArray(id.length / 2) { i -> id.substring(i * 2, i * 2 + 2).toInt(16).toByte() }
+        return hkdf32(ka.generateSecret(), salt, "vela-link-v1")
+    }
+
+    private fun linkAad(id: String) = "vela-link|$id".utf8()
+
+    class LinkApproval(val phonePub: String, val iv: String, val ct: String)
+
+    /** Handy bestätigt: verschlüsselt das Schlüsselpaket für den Rechner, der den QR-Code zeigt. */
+    fun linkApprove(id: String, deskPubB64url: String, bundleJson: String): LinkApproval {
+        val g = KeyPairGenerator.getInstance("EC", bc)
+        g.initialize(ECGenParameterSpec("secp256r1"))
+        val kp = g.generateKeyPair()
+        val key = linkKey(kp.private, deskPubB64url.unb64url(), id)
+        val iv = randomBytes(12)
+        val ct = aesGcmEncrypt(key, iv, linkAad(id), bundleJson.utf8())
+        return LinkApproval(rawPoint(kp.public as ECPublicKey).b64url(), iv.b64url(), ct.b64url())
+    }
+
+    /** Rechner holt ab: entschlüsselt das Paket mit seinem privaten Schlüssel. */
+    fun linkClaim(pair: LinkPair, id: String, phonePubB64url: String, ivB64url: String, ctB64url: String): String {
+        val key = linkKey(pair.priv, phonePubB64url.unb64url(), id)
+        return try {
+            String(aesGcmDecrypt(key, ivB64url.unb64url(), linkAad(id), ctB64url.unb64url()), Charsets.UTF_8)
+        } catch (e: Exception) {
+            throw CryptoError("link", "Das Schlüsselpaket konnte nicht entschlüsselt werden")
+        }
+    }
+
+    private val linkRe = Regex("^vela-link:1:([a-f0-9]{32}):([A-Za-z0-9_-]{87})$")
+
+    /** Liest „vela-link:1:<id>:<pub>“. */
+    fun parseLink(text: String): Pair<String, String>? = linkRe.find(text.trim())?.let { it.groupValues[1] to it.groupValues[2] }
+
     // ------------------------------------------------------------------ Fingerabdrücke / Sicherheitsnummer
     private fun fingerprint(encPub: String, sigPub: String): ByteArray =
         MessageDigest.getInstance("SHA-256").digest(encPub.unb64() + sigPub.unb64())

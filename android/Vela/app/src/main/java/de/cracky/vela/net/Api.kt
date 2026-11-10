@@ -3,7 +3,13 @@ package de.cracky.vela.net
 import android.content.SharedPreferences
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
+import okhttp3.Response
 import okhttp3.Cookie
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import okhttp3.CookieJar
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrl
@@ -122,6 +128,17 @@ class Api(private val prefs: SharedPreferences) {
     suspend fun arr(path: String): JSONArray = call(path) as? JSONArray ?: JSONArray()
 
     /** Lädt eine (bereits verschlüsselte) Datei hoch und meldet den Fortschritt (0..1). */
+    /** Führt den Aufruf aus und bricht ihn ab, wenn die Coroutine abgebrochen wird. */
+    private suspend fun Call.await(): Response = suspendCancellableCoroutine { cont ->
+        cont.invokeOnCancellation { try { cancel() } catch (e: Throwable) { } }
+        enqueue(object : Callback {
+            override fun onFailure(call: Call, e: IOException) { if (cont.isActive) cont.resumeWithException(e) }
+            override fun onResponse(call: Call, response: Response) {
+                if (cont.isActive) cont.resume(response) else response.close()
+            }
+        })
+    }
+
     suspend fun upload(file: File, onProgress: (Float) -> Unit): String = withContext(Dispatchers.IO) {
         val total = file.length()
         val body = object : RequestBody() {
@@ -143,7 +160,7 @@ class Api(private val prefs: SharedPreferences) {
         }
         val req = Request.Builder().url(url("/files")).header("X-Requested-With", "vela").post(body).build()
         try {
-            client.newCall(req).execute().use { res ->
+            client.newCall(req).await().use { res ->
                 val text = res.body?.string().orEmpty()
                 if (!res.isSuccessful) throw ApiError(res.code, detail(text, "Upload fehlgeschlagen (${res.code})"))
                 JSONObject(text).getString("id")

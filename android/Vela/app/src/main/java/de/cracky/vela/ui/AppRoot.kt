@@ -21,7 +21,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Chat
+import androidx.compose.material.icons.filled.DonutLarge
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
@@ -50,7 +60,9 @@ fun AppRoot(repo: Repo, pendingConv: MutableStateFlow<String?>) {
     val pending by pendingConv.collectAsState()
     val toast by repo.toast.collectAsState()
     val snack = remember { SnackbarHostState() }
-    var screen by remember { mutableStateOf<Screen>(Screen.List) }
+    var tab by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("chats") }
+    val convs by repo.convs.collectAsState()
+    val statuses by repo.statuses.collectAsState()
 
     LaunchedEffect(toast) {
         toast?.let { snack.showSnackbar(it); repo.toast.value = null }
@@ -72,33 +84,49 @@ fun AppRoot(repo: Repo, pendingConv: MutableStateFlow<String?>) {
                 Phase.Totp -> TotpFlow(repo)
                 Phase.NeedKeys -> UnlockScreen(repo)
                 Phase.Ready -> {
-                    BackHandler(enabled = active != null || screen != Screen.List) {
-                        if (screen != Screen.List) screen = Screen.List else repo.closeChat()
+                    BackHandler(enabled = active != null || tab != "chats") {
+                        if (active != null) repo.closeChat() else tab = "chats"
                     }
-                    val dest = when {
-                        screen == Screen.Settings -> "settings"
-                        active != null -> "chat:$active"
-                        else -> "list"
-                    }
-                    AnimatedContent(
-                        targetState = dest,
-                        transitionSpec = {
-                            val forward = (if (targetState == "list") 0 else 1) > (if (initialState == "list") 0 else 1)
-                            val spec = spring<IntOffset>(dampingRatio = 0.9f, stiffness = 420f)
-                            if (forward) {
-                                (slideInHorizontally(spec) { it / 3 } + fadeIn(tween(220))) togetherWith
-                                    (slideOutHorizontally(spec) { -it / 6 } + fadeOut(tween(160)))
-                            } else {
-                                (slideInHorizontally(spec) { -it / 6 } + fadeIn(tween(220))) togetherWith
-                                    (slideOutHorizontally(spec) { it / 3 } + fadeOut(tween(160)))
+                    val dest = if (active != null) "chat:$active" else "tab:$tab"
+                    val unreadChats = convs.filter { it.status == "accepted" && !it.archived && !it.muted }.sumOf { it.unread }
+                    val unseenStatus = statuses.filter { !it.seen && it.userId != repo.myId }.map { it.userId }.toSet().size
+                    Column(Modifier.fillMaxSize()) {
+                        Box(Modifier.weight(1f).fillMaxWidth()) {
+                            AnimatedContent(
+                                targetState = dest,
+                                transitionSpec = {
+                                    fun rank(d: String) = if (d.startsWith("chat:")) 10 else listOf("tab:chats", "tab:status", "tab:settings").indexOf(d)
+                                    val forward = rank(targetState) > rank(initialState)
+                                    val spec = spring<IntOffset>(dampingRatio = 0.9f, stiffness = 420f)
+                                    if (forward) {
+                                        (slideInHorizontally(spec) { it / 3 } + fadeIn(tween(220))) togetherWith
+                                            (slideOutHorizontally(spec) { -it / 6 } + fadeOut(tween(160)))
+                                    } else {
+                                        (slideInHorizontally(spec) { -it / 6 } + fadeIn(tween(220))) togetherWith
+                                            (slideOutHorizontally(spec) { it / 3 } + fadeOut(tween(160)))
+                                    }
+                                },
+                                label = "navigation",
+                            ) { d ->
+                                when {
+                                    d.startsWith("chat:") -> ChatScreen(repo, d.removePrefix("chat:")) { repo.closeChat() }
+                                    d == "tab:status" -> StatusScreen(repo)
+                                    d == "tab:settings" -> SettingsScreen(repo) { tab = "chats" }
+                                    else -> ChatListScreen(repo, onSettings = { tab = "settings" })
+                                }
                             }
-                        },
-                        label = "navigation",
-                    ) { d ->
-                        when {
-                            d == "settings" -> SettingsScreen(repo) { screen = Screen.List }
-                            d.startsWith("chat:") -> ChatScreen(repo, d.removePrefix("chat:")) { repo.closeChat() }
-                            else -> ChatListScreen(repo, onSettings = { screen = Screen.Settings })
+                        }
+                        AnimatedVisibility(
+                            visible = active == null,
+                            enter = expandVertically(spring(stiffness = 500f)) + fadeIn(),
+                            exit = shrinkVertically(spring(stiffness = 500f)) + fadeOut(),
+                        ) {
+                            val haptics = rememberHaptics()
+                            NavigationBar {
+                                NavItem(tab == "chats", "Chats", Icons.Filled.Chat, unreadChats) { if (tab != "chats") haptics.tick(); tab = "chats" }
+                                NavItem(tab == "status", "Status", Icons.Filled.DonutLarge, unseenStatus) { if (tab != "status") haptics.tick(); tab = "status" }
+                                NavItem(tab == "settings", "Einstellungen", Icons.Filled.Settings, 0) { if (tab != "settings") haptics.tick(); tab = "settings" }
+                            }
                         }
                     }
                 }
@@ -108,7 +136,15 @@ fun AppRoot(repo: Repo, pendingConv: MutableStateFlow<String?>) {
     }
 }
 
-enum class Screen { List, Settings }
+@Composable
+private fun androidx.compose.foundation.layout.RowScope.NavItem(selected: Boolean, label: String, icon: ImageVector, badge: Int, onClick: () -> Unit) {
+    NavigationBarItem(
+        selected = selected, onClick = onClick, label = { Text(label) },
+        icon = {
+            BadgedBox(badge = { if (badge > 0) Badge { Text(if (badge > 99) "99+" else badge.toString()) } }) { Icon(icon, label) }
+        },
+    )
+}
 
 @Composable
 private fun BannerBar(repo: Repo) {
