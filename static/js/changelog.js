@@ -9,7 +9,7 @@ import { version } from './version.js';
 // Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
-    version: version, date: '2026-11-07',
+    version: version, date: '2026-11-10',
     items: [
       { icon: 'bell', title: 'Benachrichtigungen auch auf Android (Web-App)',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },
