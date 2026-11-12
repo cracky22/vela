@@ -288,7 +288,7 @@ def cmd_doctor(a: argparse.Namespace) -> None:
     print("\nDateien:")
     for rel in ("app/admin_web.py", "app/admin_ops.py", "app/maintenance.py", "app/push.py", "app/clientcache.py", "app/vault.py",
                 "static/admin.html", "static/sw.js", "static/badge-96.png", "static/icon.svg", "static/css/admin.css", "static/css/theme.css",
-                "static/js/admin.js", "static/js/admin-groups.js", "static/js/admin-base.js", "static/js/conn.js", "static/js/notify.js", "static/js/changelog.js",
+                "static/js/admin.js", "static/js/admin-base.js", "static/js/conn.js", "static/js/notify.js", "static/js/changelog.js",
                 "static/js/cache.js", "static/js/vault.js", "static/js/keystash.js", "static/js/qrlink.js", "static/js/devices.js",
                 "static/js/vendor/argon2.umd.min.js", "static/js/vendor/jsQR.js", "static/js/boot-guard.js"):
         print(f"  {'✓' if (BASE / rel).exists() else '✗'} {rel}")
@@ -305,7 +305,8 @@ def cmd_doctor(a: argparse.Namespace) -> None:
             ("Entschlüsselungs-Cache in app.js", "static/js/app.js", "cacheGet(", "patch_vela3.py"),
             ("Farbschema in index.html", "static/index.html", "theme.css", "patch_vela3.py"),
             ("Schlüsseltresor + QR-Anmeldung", "static/js/auth.js", "vaultLogin(", "patch_vela4.py"),
-            ("Start-Wächter in index.html", "static/index.html", "boot-guard.js", "patch_vela4.py")):
+            ("Start-Wächter in index.html", "static/index.html", "boot-guard.js", "patch_vela4.py"),
+            ("Versionsnummer in version.js", "static/js/version.js", "export const version", "patch_vela5.py")):
         print(f"  {'✓' if has(rel, needle) else '✗'} {desc}" + ("" if has(rel, needle) else f"   -> {patch}"))
     n, problems = js_import_problems()
     print(f"\nJavaScript-Importe ({n} Module):" + (" ✓ alles vorhanden" if not problems else ""))

@@ -2,19 +2,21 @@
 // localStorage. Neuer Eintrag nach einem Update: oben in CHANGELOG ergänzen und `version` in app.js erhöhen.
 import { h, icon } from './util.js';
 import { dialog } from './ui.js';
+import { version } from './version.js';   // eigene Datei ohne Importe -> kein Kreis mit app.js
 
 export const RELEASES_URL = 'https://github.com/cracky22/vela/releases';
 const KEY = 'vela:last-version';
-import { version } from './version.js';
-// Neueste Version zuerst. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
+// Neueste Version zuerst. Der oberste Eintrag trägt automatisch die aktuelle Versionsnummer aus version.js.
+// Beim nächsten Update: den alten Eintrag auf seine feste Nummer setzen (z. B. '1.3.2') und darüber einen neuen mit
+// `version: version` anlegen. icon: einer der Namen aus util.js (bell, chat, info, shield, warn, mic, image, …)
 export const CHANGELOG = [
   {
-    version: version, date: '2026-11-10',
+    version: version, date: '2026-10-31',
     items: [
       { icon: 'bell', title: 'Benachrichtigungen auch auf Android (Web-App)',
         text: 'Neue Nachrichten werden jetzt auch gemeldet, wenn die App geschlossen ist. Aktivieren unter Profil → Benachrichtigungen. Der Inhalt bleibt privat.' },
-      { icon: 'camera', title: 'QR-Anmeldung',
-        text: 'Neue QR-Anmeldung. Einfacher Zugang ohne Passwort.' },
+      { icon: 'warn', title: 'Wartungs- und Verbindungshinweise',
+        text: 'Bei Wartungsarbeiten zeigt Vela jetzt nen gelben Banner. Ist die Verbindung furt, siehst du „Offline - verbinde neu …“ und wenn Verbindung wieder da „Verbindung wiederhergestellt“.' },
       { icon: 'info', title: 'Neues Design',
         text: 'Es kommen nochmal Updates was Darstellung angeht, aber es wird in diesem Theming bleiben circa.' },
     ],
