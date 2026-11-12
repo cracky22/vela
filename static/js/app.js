@@ -749,6 +749,17 @@ function decode(m) {
 }
 
 // ================================================================= Chat
+// Gleicht einen bereits angezeigten Chat mit dem Server ab (verpasste WebSocket-Ereignisse nach Hintergrund/Offline)
+const refreshing = new Set();
+async function refreshChat(id) {
+  if (refreshing.has(id)) return;
+  refreshing.add(id);
+  const sig = () => (S.messages.get(id) || []).map((m) => `${m.id}:${m.read_at || ''}:${m.deleted_at || ''}`).join('|');
+  const before = sig();
+  try { await loadMessages(id); } catch { /* beim nächsten Öffnen erneut */ } finally { refreshing.delete(id); }
+  if (S.chat === id && sig() !== before) await renderMessages();
+}
+
 export async function openChat(id, { keepHistory = false } = {}) {
   const c = conv(id);
   if (!c) return;
@@ -782,7 +793,7 @@ export async function openChat(id, { keepHistory = false } = {}) {
   renderTyping();
 
   if (!S.messages.has(id)) await loadMessages(id);
-  else el.msgProgress.el.hidden = true;
+  else { el.msgProgress.el.hidden = true; refreshChat(id); }   // Zwischenspeicher sofort zeigen, im Hintergrund abgleichen
   if (S.chat !== id) return;
   el.unreadFrom = firstUnread(c);
   await renderMessages({ scroll: el.unreadFrom ? 'unread' : 'bottom' });
@@ -2110,7 +2121,11 @@ async function markRead(convId) {
   renderList();
   try { await api('/messages/read', { method: 'POST', body: { contact_id: convId, up_to: upTo } }); } catch { /* nächster Versuch beim nächsten Öffnen */ }
 }
-document.addEventListener('visibilitychange', () => { if (!document.hidden && S.chat) markRead(S.chat); });
+let hiddenAt = 0;
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { hiddenAt = Date.now(); return; }
+  if (S.chat) { markRead(S.chat); if (Date.now() - hiddenAt > 15000) refreshChat(S.chat); }   // Handy lag im Hintergrund
+});
 
 // Verschwindende Nachrichten: abgelaufene Nachrichten regelmäßig ausblenden
 setInterval(() => {
@@ -2138,7 +2153,7 @@ function connectWS() {
     wsBackoff = 1000;
     setWsState('open');
     startPing(ws);
-    if (reconnect) { loadContacts(); loadGroups(); loadStatuses().then(refreshNav).catch(() => {}); if (S.chat) loadMessages(S.chat).then(() => renderMessages()); }
+    if (reconnect) { loadContacts(); loadGroups(); loadStatuses().then(refreshNav).catch(() => {}); for (const k of [...S.messages.keys()]) if (k !== S.chat) { S.messages.delete(k); S.hasMore.delete(k); } if (S.chat) refreshChat(S.chat); }
   };
   ws.onmessage = (e) => {
     let ev;
